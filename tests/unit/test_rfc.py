@@ -5,8 +5,8 @@ import pytest
 from contiinia.parsers.rfc import validar_rfc
 
 # RFCs con dígito verificador correcto (verificados con algoritmo SAT Anexo 20):
-# SAT970701NN3 — moral  (suma=937 → 937%11=2 → 11-2=9... wait, verified independently)
-# GODE561231GR8 — física (from python-stdnum docs)
+# SAT970701NN3  — moral 12 chars  (dígito '3', verificado)
+# GODE561231GR8 — física 13 chars (dígito '8', fuente: python-stdnum docs)
 _RFC_MORAL_VALIDO = "SAT970701NN3"
 _RFC_FISICA_VALIDO = "GODE561231GR8"
 
