@@ -292,3 +292,168 @@ def test_calcular_resumen_recursivo(tmp_path: Path) -> None:
     assert result_no_rec.conteo.total_archivos == 0
     assert result_rec.conteo.total_archivos == 1
     assert result_rec.recursivo is True
+
+
+# ---------------------------------------------------------------------------
+# QA-RES-01: Retenciones en resumen (ya implementado, verificar exposición)
+# ---------------------------------------------------------------------------
+
+
+def test_resumen_expone_retenciones(tmp_path: Path) -> None:
+    """QA-RES-01: los campos total_iva_retenido y total_isr_retenido están en la salida."""
+    (tmp_path / "i.xml").write_bytes((FIXTURES_DIR / "cfdi_ingreso.xml").read_bytes())
+    result = calcular_resumen(tmp_path)
+    assert hasattr(result.impuestos, "total_iva_retenido")
+    assert hasattr(result.impuestos, "total_isr_retenido")
+    # Sin retenciones en cfdi_ingreso → valores en 0
+    assert result.impuestos.total_iva_retenido == Decimal("0")
+    assert result.impuestos.total_isr_retenido == Decimal("0")
+
+
+# ---------------------------------------------------------------------------
+# QA-RES-02: PPD devengado — advertencia en output
+# ---------------------------------------------------------------------------
+
+
+_XML_INGRESO_PPD = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4"
+  Version="4.0" Fecha="2024-03-15T10:00:00" Sello="S" NoCertificado="00001"
+  Certificado="C" SubTotal="1000.00" Moneda="MXN" Total="1160.00"
+  TipoDeComprobante="I" Exportacion="01" MetodoPago="PPD" LugarExpedicion="06600">
+  <cfdi:Emisor Rfc="AAA010101AAA" Nombre="E" RegimenFiscal="601"/>
+  <cfdi:Receptor Rfc="BBB020202BBB" Nombre="R" DomicilioFiscalReceptor="64000"
+    RegimenFiscalReceptor="601" UsoCFDI="G01"/>
+  <cfdi:Conceptos>
+    <cfdi:Concepto ClaveProdServ="81161500" Cantidad="1" ClaveUnidad="H87"
+      Descripcion="X" ValorUnitario="1000.00" Importe="1000.00" ObjetoImp="02">
+      <cfdi:Impuestos><cfdi:Traslados>
+        <cfdi:Traslado Base="1000.00" Impuesto="002" TipoFactor="Tasa"
+          TasaOCuota="0.160000" Importe="160.00"/>
+      </cfdi:Traslados></cfdi:Impuestos>
+    </cfdi:Concepto>
+  </cfdi:Conceptos>
+  <cfdi:Impuestos TotalImpuestosTrasladados="160.00">
+    <cfdi:Traslados>
+      <cfdi:Traslado Base="1000.00" Impuesto="002" TipoFactor="Tasa"
+        TasaOCuota="0.160000" Importe="160.00"/>
+    </cfdi:Traslados>
+  </cfdi:Impuestos>
+  <cfdi:Complemento>
+    <tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital"
+      Version="1.1" UUID="PPD00000-0000-0000-0000-000000000001"
+      FechaTimbrado="2024-03-15T10:05:00" RfcProvCertif="SAT970701NN3"
+      SelloCFD="X" NoCertificadoSAT="00002" SelloSAT="X"/>
+  </cfdi:Complemento>
+</cfdi:Comprobante>"""
+
+
+def test_resumen_ppd_sin_complemento_advertencia(tmp_path: Path) -> None:
+    """QA-RES-02: CFDI PPD sin complemento de pago → advertencia en output."""
+    (tmp_path / "ppd.xml").write_text(_XML_INGRESO_PPD, encoding="utf-8")
+    result = calcular_resumen(tmp_path)
+    assert result.pagos_ppd_sin_complemento.count == 1
+    # Debe haber al menos una advertencia mencionando PPD
+    ppd_warns = [a for a in result.advertencias if "PPD" in a]
+    assert len(ppd_warns) >= 1
+
+
+# ---------------------------------------------------------------------------
+# QA-RES-03: Moneda extranjera — conversión y exclusión
+# ---------------------------------------------------------------------------
+
+
+_XML_INGRESO_USD = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4"
+  Version="4.0" Fecha="2024-03-15T10:00:00" Sello="S" NoCertificado="00001"
+  Certificado="C" SubTotal="100.00" Moneda="USD" TipoCambio="17.50"
+  Total="116.00" TipoDeComprobante="I" Exportacion="01"
+  MetodoPago="PUE" LugarExpedicion="06600">
+  <cfdi:Emisor Rfc="AAA010101AAA" Nombre="E" RegimenFiscal="601"/>
+  <cfdi:Receptor Rfc="BBB020202BBB" Nombre="R" DomicilioFiscalReceptor="64000"
+    RegimenFiscalReceptor="601" UsoCFDI="G01"/>
+  <cfdi:Conceptos>
+    <cfdi:Concepto ClaveProdServ="81161500" Cantidad="1" ClaveUnidad="H87"
+      Descripcion="X" ValorUnitario="100.00" Importe="100.00" ObjetoImp="02">
+      <cfdi:Impuestos><cfdi:Traslados>
+        <cfdi:Traslado Base="100.00" Impuesto="002" TipoFactor="Tasa"
+          TasaOCuota="0.160000" Importe="16.00"/>
+      </cfdi:Traslados></cfdi:Impuestos>
+    </cfdi:Concepto>
+  </cfdi:Conceptos>
+  <cfdi:Impuestos TotalImpuestosTrasladados="16.00">
+    <cfdi:Traslados>
+      <cfdi:Traslado Base="100.00" Impuesto="002" TipoFactor="Tasa"
+        TasaOCuota="0.160000" Importe="16.00"/>
+    </cfdi:Traslados>
+  </cfdi:Impuestos>
+  <cfdi:Complemento>
+    <tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital"
+      Version="1.1" UUID="USD00000-0000-0000-0000-000000000001"
+      FechaTimbrado="2024-03-15T10:05:00" RfcProvCertif="SAT970701NN3"
+      SelloCFD="X" NoCertificadoSAT="00002" SelloSAT="X"/>
+  </cfdi:Complemento>
+</cfdi:Comprobante>"""
+
+_XML_INGRESO_USD_SIN_TC = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4"
+  Version="4.0" Fecha="2024-03-15T10:00:00" Sello="S" NoCertificado="00001"
+  Certificado="C" SubTotal="100.00" Moneda="USD" Total="116.00"
+  TipoDeComprobante="I" Exportacion="01" MetodoPago="PUE" LugarExpedicion="06600">
+  <cfdi:Emisor Rfc="AAA010101AAA" Nombre="E" RegimenFiscal="601"/>
+  <cfdi:Receptor Rfc="BBB020202BBB" Nombre="R" DomicilioFiscalReceptor="64000"
+    RegimenFiscalReceptor="601" UsoCFDI="G01"/>
+  <cfdi:Conceptos>
+    <cfdi:Concepto ClaveProdServ="81161500" Cantidad="1" ClaveUnidad="H87"
+      Descripcion="X" ValorUnitario="100.00" Importe="100.00" ObjetoImp="02">
+      <cfdi:Impuestos><cfdi:Traslados>
+        <cfdi:Traslado Base="100.00" Impuesto="002" TipoFactor="Tasa"
+          TasaOCuota="0.160000" Importe="16.00"/>
+      </cfdi:Traslados></cfdi:Impuestos>
+    </cfdi:Concepto>
+  </cfdi:Conceptos>
+  <cfdi:Impuestos TotalImpuestosTrasladados="16.00">
+    <cfdi:Traslados>
+      <cfdi:Traslado Base="100.00" Impuesto="002" TipoFactor="Tasa"
+        TasaOCuota="0.160000" Importe="16.00"/>
+    </cfdi:Traslados>
+  </cfdi:Impuestos>
+  <cfdi:Complemento>
+    <tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital"
+      Version="1.1" UUID="USD00000-0000-0000-0000-000000000002"
+      FechaTimbrado="2024-03-15T10:05:00" RfcProvCertif="SAT970701NN3"
+      SelloCFD="X" NoCertificadoSAT="00002" SelloSAT="X"/>
+  </cfdi:Complemento>
+</cfdi:Comprobante>"""
+
+
+def test_resumen_moneda_usd_con_tipo_cambio(tmp_path: Path) -> None:
+    """QA-RES-03: CFDI en USD con TipoCambio=17.50 → total_neto en MXN = 116*17.50."""
+    (tmp_path / "usd.xml").write_text(_XML_INGRESO_USD, encoding="utf-8")
+    result = calcular_resumen(tmp_path)
+    # 116.00 USD × 17.50 = 2030.00 MXN
+    assert result.totales.total_neto == Decimal("2030.00")
+    assert "USD" in result.monedas_detectadas
+
+
+def test_resumen_moneda_usd_sin_tipo_cambio_excluido(tmp_path: Path) -> None:
+    """QA-RES-03: CFDI en USD sin TipoCambio → excluido de totales + advertencia."""
+    (tmp_path / "usd_sin_tc.xml").write_text(_XML_INGRESO_USD_SIN_TC, encoding="utf-8")
+    result = calcular_resumen(tmp_path)
+    # Sin tipo_cambio: excluido de totales monetarios
+    assert result.totales.total_neto == Decimal("0")
+    warn_usd = [a for a in result.advertencias if "USD" in a and "excluido" in a]
+    assert len(warn_usd) >= 1
+
+
+def test_resumen_monedas_detectadas(tmp_path: Path) -> None:
+    """QA-RES-03: monedas_detectadas lista todas las monedas encontradas."""
+    (tmp_path / "mxn.xml").write_bytes((FIXTURES_DIR / "cfdi_ingreso.xml").read_bytes())
+    (tmp_path / "usd.xml").write_text(_XML_INGRESO_USD, encoding="utf-8")
+    result = calcular_resumen(tmp_path)
+    assert "MXN" in result.monedas_detectadas
+    assert "USD" in result.monedas_detectadas
+    # MXN debe ir primero
+    assert result.monedas_detectadas[0] == "MXN"

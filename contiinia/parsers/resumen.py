@@ -117,27 +117,6 @@ def calcular_resumen(directorio: Path, recursivo: bool = False) -> ResumenLote:
         moneda = cfdi.moneda or "MXN"
         monedas_set.add(moneda)
 
-        subtotal_orig = cfdi.subtotal or Decimal("0")
-        total_orig = cfdi.total or Decimal("0")
-
-        # QA-RES-03: convertir a MXN si el CFDI está en moneda extranjera
-        if moneda != "MXN":
-            tc = cfdi.tipo_cambio
-            if tc is None or tc == Decimal("0"):
-                advertencias.append(
-                    f"CFDI {cfdi.uuid} en {moneda} sin TipoCambio válido; "
-                    "excluido de totales monetarios."
-                )
-                # Registrar fecha pero NO sumar a totales
-                if cfdi.fecha:
-                    fechas.append(cfdi.fecha)
-                continue
-            subtotal = subtotal_orig * tc
-            total = total_orig * tc
-        else:
-            subtotal = subtotal_orig
-            total = total_orig
-
         # Registrar fecha para período
         if cfdi.fecha:
             fechas.append(cfdi.fecha)
@@ -145,11 +124,28 @@ def calcular_resumen(directorio: Path, recursivo: bool = False) -> ResumenLote:
         traslados_globales = cfdi.impuestos.traslados if cfdi.impuestos else []
         retenciones_globales = cfdi.impuestos.retenciones if cfdi.impuestos else []
 
-        # Factor de conversión a MXN (1 para MXN nativo)
-        tc_factor = (cfdi.tipo_cambio or Decimal("1")) if moneda != "MXN" else Decimal("1")
+        # QA-RES-03: factor de conversión a MXN para tipos monetarios (I y E)
+        # Tipos neutros (P, N, T) no tienen importes significativos; no requieren conversión.
+        moneda_excluida = False
+        tc_factor = Decimal("1")
+        if moneda != "MXN" and tipo in ("I", "E"):
+            tc = cfdi.tipo_cambio
+            if tc is None or tc == Decimal("0"):
+                advertencias.append(
+                    f"CFDI {cfdi.uuid} en {moneda} sin TipoCambio válido; "
+                    "excluido de totales monetarios."
+                )
+                moneda_excluida = True
+            else:
+                tc_factor = tc
+
+        subtotal_orig = cfdi.subtotal or Decimal("0")
+        total_orig = cfdi.total or Decimal("0")
+        subtotal = subtotal_orig * tc_factor
+        total = total_orig * tc_factor
 
         # --- Contabilización por tipo ---
-        if tipo == "I":
+        if tipo == "I" and not moneda_excluida:
             subtotal_i += subtotal
             total_i += total
 
@@ -171,7 +167,7 @@ def calcular_resumen(directorio: Path, recursivo: bool = False) -> ResumenLote:
                 elif r.impuesto == "001":
                     total_isr_retenido += (r.importe or Decimal("0")) * tc_factor
 
-        elif tipo == "E":
+        elif tipo == "E" and not moneda_excluida:
             subtotal_e += subtotal
             total_e += total
 

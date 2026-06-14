@@ -225,3 +225,65 @@ def test_ingreso_tiene_timbre() -> None:
     result = parsear_xml(fx("cfdi_ingreso.xml"))
     assert result.complemento_timbre is not None
     assert result.complemento_timbre.rfc_prov_certif == "SAT970701NN3"
+
+
+# ---------------------------------------------------------------------------
+# QA-XML-01: tasa IVA desconocida → advertencia (no rechazo)
+# ---------------------------------------------------------------------------
+
+_XML_TASA_DESCONOCIDA = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4"
+  Version="4.0" Fecha="2024-03-15T10:00:00" Sello="S" NoCertificado="00001"
+  Certificado="C" SubTotal="1000.00" Moneda="MXN" Total="1050.00"
+  TipoDeComprobante="I" Exportacion="01" MetodoPago="PUE" LugarExpedicion="06600">
+  <cfdi:Emisor Rfc="AAA010101AAA" Nombre="E" RegimenFiscal="601"/>
+  <cfdi:Receptor Rfc="BBB020202BBB" Nombre="R" DomicilioFiscalReceptor="64000"
+    RegimenFiscalReceptor="601" UsoCFDI="G01"/>
+  <cfdi:Conceptos>
+    <cfdi:Concepto ClaveProdServ="81161500" Cantidad="1" ClaveUnidad="H87"
+      Descripcion="X" ValorUnitario="1000.00" Importe="1000.00" ObjetoImp="02">
+      <cfdi:Impuestos><cfdi:Traslados>
+        <cfdi:Traslado Base="1000.00" Impuesto="002" TipoFactor="Tasa"
+          TasaOCuota="0.050000" Importe="50.00"/>
+      </cfdi:Traslados></cfdi:Impuestos>
+    </cfdi:Concepto>
+  </cfdi:Conceptos>
+  <cfdi:Impuestos TotalImpuestosTrasladados="50.00">
+    <cfdi:Traslados>
+      <cfdi:Traslado Base="1000.00" Impuesto="002" TipoFactor="Tasa"
+        TasaOCuota="0.050000" Importe="50.00"/>
+    </cfdi:Traslados>
+  </cfdi:Impuestos>
+  <cfdi:Complemento>
+    <tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital"
+      Version="1.1" UUID="AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"
+      FechaTimbrado="2024-03-15T10:05:00" RfcProvCertif="SAT970701NN3"
+      SelloCFD="X" NoCertificadoSAT="00002" SelloSAT="X"/>
+  </cfdi:Complemento>
+</cfdi:Comprobante>"""
+
+
+def test_tasa_iva_desconocida_no_rechaza(tmp_path: Path) -> None:
+    """QA-XML-01: tasa IVA 5% desconocida → parsea OK, no lanza excepción."""
+    from pathlib import Path as P
+    ruta = tmp_path / "tasa5.xml"
+    ruta.write_text(_XML_TASA_DESCONOCIDA, encoding="utf-8")
+    result = parsear_xml(ruta)
+    assert result.tipo_de_comprobante == "I"
+
+
+def test_tasa_iva_desconocida_genera_advertencia(tmp_path: Path) -> None:
+    """QA-XML-01: tasa IVA desconocida → advertencia en cfdi.advertencias."""
+    ruta = tmp_path / "tasa5.xml"
+    ruta.write_text(_XML_TASA_DESCONOCIDA, encoding="utf-8")
+    result = parsear_xml(ruta)
+    warns = [a for a in result.advertencias if "0.050000" in a]
+    assert len(warns) >= 1
+
+
+def test_tasa_iva_conocida_sin_advertencia() -> None:
+    """QA-XML-01: tasas conocidas (16%, 8%, 0%, Exento) → sin advertencia."""
+    result = parsear_xml(fx("cfdi_ingreso.xml"))
+    tasa_warns = [a for a in result.advertencias if "Tasa IVA no reconocida" in a]
+    assert len(tasa_warns) == 0

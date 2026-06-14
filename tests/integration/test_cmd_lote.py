@@ -164,3 +164,38 @@ def test_cmd_duplicados_schema_no_necesita_directorio_valido() -> None:
     assert result.exit_code == 0
     schema = json.loads(result.output)
     assert isinstance(schema, dict)
+
+
+# ---------------------------------------------------------------------------
+# QA-LOT-01: exit code cuando TODOS los archivos fallan
+# ---------------------------------------------------------------------------
+
+
+def test_lote_todos_fallan_exit_1(tmp_path: Path) -> None:
+    """QA-LOT-01: todos los archivos con error → exit 1."""
+    (tmp_path / "corrupto.xml").write_text("<malformado>", encoding="utf-8")
+    result = runner.invoke(app, ["lote", str(tmp_path)])
+    assert result.exit_code == 1
+    data = json.loads(result.output)
+    assert data["exitosos"] == 0
+    assert data["errores"] >= 1
+
+
+def test_lote_algunos_fallan_exit_0(tmp_path: Path) -> None:
+    """QA-LOT-01: algunos fallan y algunos exitosos → exit 0."""
+    ingreso = Path(__file__).parent.parent.parent / "fixtures" / "cfdi_ingreso.xml"
+    (tmp_path / "ok.xml").write_bytes(ingreso.read_bytes())
+    (tmp_path / "corrupto.xml").write_text("<malformado>", encoding="utf-8")
+    result = runner.invoke(app, ["lote", str(tmp_path)])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["exitosos"] == 1
+
+
+def test_lote_directorio_vacio_exit_0(tmp_path: Path) -> None:
+    """QA-LOT-01: directorio sin XMLs → exit 0 (no hay archivos que fallen)."""
+    result = runner.invoke(app, ["lote", str(tmp_path)])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["total_archivos"] == 0
+    assert data["exitosos"] == 0

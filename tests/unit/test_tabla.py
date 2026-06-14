@@ -248,3 +248,49 @@ def test_filas_vacias_omitidas() -> None:
     tmp.unlink()
 
     assert result.total_registros == 2
+
+
+# ---------------------------------------------------------------------------
+# QA-TAB-01: XLSX multi-hoja → primera hoja procesada + advertencia
+# ---------------------------------------------------------------------------
+
+
+def test_xlsx_multi_hoja_procesa_primera(tmp_path: Path) -> None:
+    """QA-TAB-01: XLSX con múltiples hojas → procesa primera, emite advertencia."""
+    import openpyxl
+    ruta = tmp_path / "multi.xlsx"
+    wb = openpyxl.Workbook()
+    ws1 = wb.active
+    ws1.title = "Hoja1"
+    ws1.append(["clave_prod_serv", "descripcion", "cantidad", "valor_unitario", "importe"])
+    ws1.append(["84111506", "Servicio", "1", "100.00", "100.00"])
+    ws2 = wb.create_sheet("Hoja2")
+    ws2.append(["clave_prod_serv", "descripcion", "cantidad", "valor_unitario", "importe"])
+    ws2.append(["99999999", "Otro", "5", "200.00", "1000.00"])
+    wb.save(ruta)
+
+    result = parsear_tabla(ruta)
+
+    # Solo la primera hoja: 1 registro
+    assert result.total_registros == 1
+    assert result.registros[0].clave_prod_serv == "84111506"
+    # Advertencia presente
+    assert len(result.advertencias) >= 1
+    assert "Hoja1" in result.advertencias[0]
+
+
+def test_xlsx_una_hoja_sin_advertencia(tmp_path: Path) -> None:
+    """QA-TAB-01: XLSX con una sola hoja → sin advertencia."""
+    import openpyxl
+    ruta = tmp_path / "single.xlsx"
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Conceptos"
+    ws.append(["clave_prod_serv", "descripcion", "cantidad", "valor_unitario", "importe"])
+    ws.append(["84111506", "Servicio", "1", "100.00", "100.00"])
+    wb.save(ruta)
+
+    result = parsear_tabla(ruta)
+
+    assert result.total_registros == 1
+    assert result.advertencias == []
