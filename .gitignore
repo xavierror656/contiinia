@@ -22,3 +22,6 @@ htmlcov/
 
 # uv
 .python-version
+build/
+dist/
+*.spec
