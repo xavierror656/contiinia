@@ -1,0 +1,3 @@
+clave_prod_serv,descripcion,cantidad,valor_unitario,importe,impuesto,tasa
+81161500,Consultoria,10,100.00,1000.00,IVA,16%
+84111500,Soporte tecnico,5,200.00,1000.00,IVA,16%

@@ -1,0 +1,24 @@
+# Build
+dist/
+*.spec
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+# Datos fiscales reales — NUNCA versionar (Principio 7)
+fixtures/reales/
+fixtures/*_real.xml
+fixtures/*_real.csv
+
+# Herramientas
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# uv
+.python-version

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  Version="4.0" Serie="N" Folio="1004" Fecha="2024-03-31T10:00:00"
+  Sello="SELLO_SINTETICO" NoCertificado="00001"
+  Certificado="CERT" SubTotal="15000.00" Moneda="MXN" Total="15000.00"
+  TipoDeComprobante="N" Exportacion="01"
+  LugarExpedicion="06600">
+  <cfdi:Emisor Rfc="AAA010101AAA" Nombre="Empresa Emisora SA de CV" RegimenFiscal="601"/>
+  <cfdi:Receptor Rfc="CURP001" Nombre="Empleado Ejemplo"
+    DomicilioFiscalReceptor="06600" RegimenFiscalReceptor="605"
+    UsoCFDI="CN01"/>
+  <cfdi:Conceptos>
+    <cfdi:Concepto ClaveProdServ="84111505" ClaveUnidad="ACT"
+      Cantidad="1" Descripcion="Pago de nomina"
+      ValorUnitario="15000.00" Importe="15000.00" ObjetoImp="01"/>
+  </cfdi:Conceptos>
+  <cfdi:Complemento>
+    <nomina12:Nomina xmlns:nomina12="http://www.sat.gob.mx/nomina12"
+      Version="1.2" TipoNomina="O" FechaPago="2024-03-31"
+      FechaInicialPago="2024-03-16" FechaFinalPago="2024-03-31"
+      NumDiasPagados="15" TotalPercepciones="15000.00"
+      TotalDeducciones="0.00" TotalOtrosPagos="0.00">
+      <nomina12:Emisor RegistroPatronal="A1234567890" RfcPatronOrigen="AAA010101AAA"/>
+      <nomina12:Receptor Curp="CURP001HDFNNN01" TipoContrato="01"
+        Sindicalizado="No" TipoJornada="01" TipoRegimen="02"
+        NumEmpleado="001" Departamento="Tecnologia" Puesto="Desarrollador"
+        RiesgoGrado="1" PeriodicidadPago="04" Banco="006"
+        CuentaBancaria="0123456789" SalarioBaseCotApor="500.00"
+        SalarioDiarioIntegrado="600.00" ClaveEntFed="CMX"/>
+      <nomina12:Percepciones TotalSueldos="15000.00"
+        TotalSeparacionIndemnizacion="0.00" TotalJubilacionPensionRetiro="0.00"
+        TotalGravado="15000.00" TotalExento="0.00">
+        <nomina12:Percepcion TipoPercepcion="001" Clave="P001"
+          Concepto="Sueldo" ImporteGravado="15000.00" ImporteExento="0.00"/>
+      </nomina12:Percepciones>
+    </nomina12:Nomina>
+    <tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital"
+      Version="1.1" UUID="12345678-1234-1234-1234-123456789004"
+      FechaTimbrado="2024-03-31T10:05:00" RfcProvCertif="SAT970701NN3"
+      SelloCFD="SELLO_CFD" NoCertificadoSAT="00002" SelloSAT="SELLO_SAT"/>
+  </cfdi:Complemento>
+</cfdi:Comprobante>

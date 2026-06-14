@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  Version="4.0" Serie="T" Folio="1005" Fecha="2024-03-18T10:00:00"
+  Sello="SELLO_SINTETICO" NoCertificado="00001"
+  Certificado="CERT" SubTotal="0" Moneda="XXX" Total="0"
+  TipoDeComprobante="T" Exportacion="01"
+  LugarExpedicion="06600">
+  <cfdi:Emisor Rfc="AAA010101AAA" Nombre="Empresa Emisora SA de CV" RegimenFiscal="601"/>
+  <cfdi:Receptor Rfc="AAA010101AAA" Nombre="Empresa Emisora SA de CV"
+    DomicilioFiscalReceptor="06600" RegimenFiscalReceptor="601"
+    UsoCFDI="S01"/>
+  <cfdi:Conceptos>
+    <cfdi:Concepto ClaveProdServ="78101801" ClaveUnidad="KGM"
+      Cantidad="100.000" Descripcion="Traslado de mercancias"
+      ValorUnitario="0" Importe="0" ObjetoImp="01"/>
+  </cfdi:Conceptos>
+  <cfdi:Complemento>
+    <tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital"
+      Version="1.1" UUID="12345678-1234-1234-1234-123456789005"
+      FechaTimbrado="2024-03-18T10:05:00" RfcProvCertif="SAT970701NN3"
+      SelloCFD="SELLO_CFD" NoCertificadoSAT="00002" SelloSAT="SELLO_SAT"/>
+  </cfdi:Complemento>
+</cfdi:Comprobante>
