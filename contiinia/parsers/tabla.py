@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 
@@ -15,7 +15,12 @@ from contiinia.errors import (
     FormatoNoSoportadoError,
     ValorNoNumericoError,
 )
-from contiinia.models.tabla import TablaResult, TablaRow
+from contiinia.models.tabla import (
+    AdvertenciaImporteInconsistente,
+    AdvertenciaTasaNoNumerica,
+    TablaResult,
+    TablaRow,
+)
 
 # ---------------------------------------------------------------------------
 # Columnas requeridas según spec 4.5
@@ -69,6 +74,25 @@ def _to_decimal(value: Any) -> Decimal | None:
         return None
 
 
+def _to_decimal_or_error(
+    canonical_vals: dict[str, Any],
+    field: str,
+    fila: int,
+    archivo: str,
+) -> Decimal | None:
+    """Convierte una columna canónica a Decimal; lanza ValorNoNumericoError si no es posible."""
+    raw = canonical_vals.get(field)
+    if raw is None:
+        return None
+    result = _to_decimal(raw)
+    if result is None:
+        raise ValorNoNumericoError(
+            f"Valor no numérico en columna '{field}', fila {fila}: {raw!r}",
+            archivo=archivo,
+        )
+    return result
+
+
 def _map_columns(df: pd.DataFrame) -> tuple[dict[str, str], list[str]]:
     """
     Retorna:
@@ -103,13 +127,13 @@ def _detect_csv_separator(ruta: Path) -> str:
     return ";" if semicolons > commas else ","
 
 
-def _load_dataframe(ruta: Path) -> tuple[pd.DataFrame, str, list[str]]:
-    """Carga el DataFrame desde CSV o XLSX. Retorna (df, formato, advertencias).
+def _load_dataframe(ruta: Path) -> tuple[pd.DataFrame, str, list[str | dict[str, Any]]]:
+    """Carga el DataFrame desde CSV, XLSX, XLS u ODS. Retorna (df, formato, advertencias).
 
-    QA-TAB-01: para XLSX multi-hoja procesa siempre la primera hoja y emite advertencia.
+    QA-TAB-01: para formatos multi-hoja procesa siempre la primera hoja y emite advertencia.
     """
     ext = ruta.suffix.lower()
-    advertencias: list[str] = []
+    advertencias: list[str | dict[str, Any]] = []
 
     if ext == ".csv":
         sep = _detect_csv_separator(ruta)
@@ -118,7 +142,8 @@ def _load_dataframe(ruta: Path) -> tuple[pd.DataFrame, str, list[str]]:
         except UnicodeDecodeError:
             df = pd.read_csv(ruta, sep=sep, encoding="latin-1", dtype=str, keep_default_na=False)
         return df, "csv", advertencias
-    elif ext in {".xlsx", ".xls"}:
+
+    elif ext == ".xlsx":
         xf = pd.ExcelFile(ruta)
         if len(xf.sheet_names) > 1:
             advertencias.append(
@@ -126,11 +151,34 @@ def _load_dataframe(ruta: Path) -> tuple[pd.DataFrame, str, list[str]]:
                 f"({', '.join(str(s) for s in xf.sheet_names)}); "
                 f"se procesó únicamente la primera hoja: '{xf.sheet_names[0]}'."
             )
-        df = xf.parse(xf.sheet_names[0], dtype=str, keep_default_na=False)
+        df = cast(pd.DataFrame, xf.parse(xf.sheet_names[0], dtype=str, keep_default_na=False))
         return df, "xlsx", advertencias
+
+    elif ext == ".xls":
+        xf = pd.ExcelFile(ruta, engine="xlrd")
+        if len(xf.sheet_names) > 1:
+            advertencias.append(
+                f"El archivo contiene {len(xf.sheet_names)} hojas "
+                f"({', '.join(str(s) for s in xf.sheet_names)}); "
+                f"se procesó únicamente la primera hoja: '{xf.sheet_names[0]}'."
+            )
+        df = cast(pd.DataFrame, xf.parse(xf.sheet_names[0], dtype=str, keep_default_na=False))
+        return df, "xls", advertencias
+
+    elif ext == ".ods":
+        xf = pd.ExcelFile(ruta, engine="odf")
+        if len(xf.sheet_names) > 1:
+            advertencias.append(
+                f"El archivo contiene {len(xf.sheet_names)} hojas "
+                f"({', '.join(str(s) for s in xf.sheet_names)}); "
+                f"se procesó únicamente la primera hoja: '{xf.sheet_names[0]}'."
+            )
+        df = cast(pd.DataFrame, xf.parse(xf.sheet_names[0], dtype=str, keep_default_na=False))
+        return df, "ods", advertencias
+
     else:
         raise FormatoNoSoportadoError(
-            f"Extensión '{ext}' no soportada. Use .csv o .xlsx.",
+            f"Extensión '{ext}' no soportada. Use .csv, .xlsx, .xls u .ods.",
             archivo=str(ruta),
         )
 
@@ -183,6 +231,9 @@ def parsear_tabla(ruta: Path) -> TablaResult:
 
     registros: list[TablaRow] = []
 
+    tasa_presente = "tasa" in columnas_detectadas
+    total_iva: Decimal | None = Decimal("0") if tasa_presente else None
+
     for idx, row in df.iterrows():
         fila = int(idx) + 2  # encabezado es fila 1, primer dato es fila 2
 
@@ -203,22 +254,23 @@ def parsear_tabla(ruta: Path) -> TablaResult:
             columnas_extra[col] = val
 
         # Convertir decimales — valor no numérico es error fatal
-        def to_decimal_or_error(field: str, archivo: str) -> Decimal | None:
-            raw = canonical_vals.get(field)
-            if raw is None:
-                return None
-            result = _to_decimal(raw)
-            if result is None:
-                raise ValorNoNumericoError(
-                    f"Valor no numérico en columna '{field}', fila {fila}: {raw!r}",
-                    archivo=archivo,
-                )
-            return result
-
         archivo_str = str(ruta)
-        cantidad = to_decimal_or_error("cantidad", archivo_str)
-        valor_unitario = to_decimal_or_error("valor_unitario", archivo_str)
-        importe = to_decimal_or_error("importe", archivo_str)
+        cantidad = _to_decimal_or_error(canonical_vals, "cantidad", fila, archivo_str)
+        valor_unitario = _to_decimal_or_error(canonical_vals, "valor_unitario", fila, archivo_str)
+        importe = _to_decimal_or_error(canonical_vals, "importe", fila, archivo_str)
+
+        # Feature 3: IVA estimado por fila
+        tasa_raw = canonical_vals.get("tasa") if tasa_presente else None
+        iva_estimado: Decimal | None = None
+        if tasa_presente and tasa_raw is not None:
+            tasa_decimal = _to_decimal(tasa_raw)
+            if tasa_decimal is None:
+                advertencias_carga.append(AdvertenciaTasaNoNumerica(
+                    fila=fila,
+                    valor_encontrado=str(tasa_raw),
+                ))
+            elif importe is not None:
+                iva_estimado = importe * tasa_decimal
 
         registro = TablaRow(
             fila=fila,
@@ -228,10 +280,31 @@ def parsear_tabla(ruta: Path) -> TablaResult:
             valor_unitario=valor_unitario,
             importe=importe,
             impuesto=canonical_vals.get("impuesto"),
-            tasa=canonical_vals.get("tasa"),
+            tasa=tasa_raw if tasa_presente else None,
+            iva_estimado=iva_estimado,
             columnas_extra=columnas_extra,
         )
         registros.append(registro)
+
+        if iva_estimado is not None and total_iva is not None:
+            total_iva += iva_estimado
+
+    # Feature 2: validación cruzada de importes
+    for registro in registros:
+        if (
+            registro.cantidad is not None
+            and registro.valor_unitario is not None
+            and registro.importe is not None
+        ):
+            esperado = registro.cantidad * registro.valor_unitario
+            diferencia = abs(registro.importe - esperado)
+            if diferencia > Decimal("0.01"):
+                advertencias_carga.append(AdvertenciaImporteInconsistente(
+                    fila=registro.fila,
+                    importe_declarado=str(registro.importe),
+                    importe_calculado=f"{esperado:.2f}",
+                    diferencia=f"{diferencia:.2f}",
+                ))
 
     return TablaResult(
         archivo=str(ruta.resolve()),
@@ -239,5 +312,6 @@ def parsear_tabla(ruta: Path) -> TablaResult:
         total_registros=len(registros),
         columnas_detectadas=columnas_detectadas,
         registros=registros,
+        total_iva_estimado=total_iva,
         advertencias=advertencias_carga,
     )

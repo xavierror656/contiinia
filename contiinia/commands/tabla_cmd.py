@@ -31,7 +31,7 @@ def cmd_tabla(
 
     try:
         result = parsear_tabla(archivo)
-        print(result.model_dump_json(exclude_none=False), flush=True)
+        print(result.model_dump_json(exclude_none=True), flush=True)
     except BusinessError as exc:
         emit_error(exc)
     except ContiiniaSystemError as exc:

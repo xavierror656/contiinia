@@ -22,6 +22,7 @@ def _safe_flush(stream: object) -> None:
 atexit.register(_safe_flush, sys.stdout)
 atexit.register(_safe_flush, sys.stderr)
 
+from contiinia.commands.exportar_cmd import cmd_exportar
 from contiinia.commands.lote_cmd import cmd_duplicados, cmd_lote
 from contiinia.commands.resumen_cmd import cmd_resumen
 from contiinia.commands.rfc_cmd import cmd_rfc
@@ -47,7 +48,7 @@ def _callback(ctx: typer.Context) -> None:
         payload = {
             "error": "subcomando_requerido",
             "archivo": None,
-            "detalle": "Se requiere un subcomando. Comandos disponibles: version, rfc, xml, tabla, lote, duplicados, resumen",
+            "detalle": "Se requiere un subcomando. Comandos disponibles: version, rfc, xml, tabla, lote, duplicados, resumen, exportar",
         }
         print(json.dumps(payload, ensure_ascii=False), file=sys.stderr, flush=True)
         raise typer.Exit(1)
@@ -60,6 +61,7 @@ app.command("tabla", help="Parsea una tabla de conceptos CSV o XLSX y emite JSON
 app.command("lote", help="Parsea todos los XML de un directorio y emite JSON.")(cmd_lote)
 app.command("duplicados", help="Detecta UUIDs duplicados en un directorio de CFDIs.")(cmd_duplicados)
 app.command("resumen", help="Agrega totales fiscales de todos los CFDI 4.0 de un directorio.")(cmd_resumen)
+app.command("exportar", help="Genera reporte Excel de CFDI desde un directorio.")(cmd_exportar)
 
 if __name__ == "__main__":
     app()

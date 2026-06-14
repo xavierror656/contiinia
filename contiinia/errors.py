@@ -102,6 +102,10 @@ class ArchivoCorrumpidoError(SystemError):
     error_type = "archivo_corrupto"
 
 
+class ErrorEscrituraError(SystemError):
+    error_type = "error_escritura"
+
+
 def emit_error(exc: ContiiniaError) -> NoReturn:
     """Emite JSON al stderr y sale con el exit code correcto."""
     payload = {
