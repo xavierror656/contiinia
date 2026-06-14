@@ -108,7 +108,7 @@ def validar_rfc(rfc: str) -> RfcValidation:
     7. Fecha válida → fecha_invalida.
     8. Fecha futura → fecha_futura.
 
-    QA-RFC-01 (decisión provisional): se normaliza a mayúsculas antes de validar.
+    QA-RFC-01: se normaliza a mayúsculas antes de validar (minúsculas aceptadas).
     """
     # --- 1. Normalizar a mayúsculas (QA-RFC-01: decisión provisional = aceptar minúsculas)
     rfc_upper = rfc.upper()

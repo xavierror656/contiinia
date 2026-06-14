@@ -103,9 +103,13 @@ def _detect_csv_separator(ruta: Path) -> str:
     return ";" if semicolons > commas else ","
 
 
-def _load_dataframe(ruta: Path) -> tuple[pd.DataFrame, str]:
-    """Carga el DataFrame desde CSV o XLSX según la extensión. Retorna (df, formato)."""
+def _load_dataframe(ruta: Path) -> tuple[pd.DataFrame, str, list[str]]:
+    """Carga el DataFrame desde CSV o XLSX. Retorna (df, formato, advertencias).
+
+    QA-TAB-01: para XLSX multi-hoja procesa siempre la primera hoja y emite advertencia.
+    """
     ext = ruta.suffix.lower()
+    advertencias: list[str] = []
 
     if ext == ".csv":
         sep = _detect_csv_separator(ruta)
@@ -113,10 +117,17 @@ def _load_dataframe(ruta: Path) -> tuple[pd.DataFrame, str]:
             df = pd.read_csv(ruta, sep=sep, encoding="utf-8", dtype=str, keep_default_na=False)
         except UnicodeDecodeError:
             df = pd.read_csv(ruta, sep=sep, encoding="latin-1", dtype=str, keep_default_na=False)
-        return df, "csv"
+        return df, "csv", advertencias
     elif ext in {".xlsx", ".xls"}:
-        df = pd.read_excel(ruta, dtype=str, keep_default_na=False)
-        return df, "xlsx"
+        xf = pd.ExcelFile(ruta)
+        if len(xf.sheet_names) > 1:
+            advertencias.append(
+                f"El archivo contiene {len(xf.sheet_names)} hojas "
+                f"({', '.join(str(s) for s in xf.sheet_names)}); "
+                f"se procesó únicamente la primera hoja: '{xf.sheet_names[0]}'."
+            )
+        df = xf.parse(xf.sheet_names[0], dtype=str, keep_default_na=False)
+        return df, "xlsx", advertencias
     else:
         raise FormatoNoSoportadoError(
             f"Extensión '{ext}' no soportada. Use .csv o .xlsx.",
@@ -144,7 +155,7 @@ def parsear_tabla(ruta: Path) -> TablaResult:
             archivo=str(ruta),
         )
 
-    df, formato = _load_dataframe(ruta)
+    df, formato, advertencias_carga = _load_dataframe(ruta)
 
     # Eliminar filas completamente vacías
     df = df.replace("", None)
@@ -228,4 +239,5 @@ def parsear_tabla(ruta: Path) -> TablaResult:
         total_registros=len(registros),
         columnas_detectadas=columnas_detectadas,
         registros=registros,
+        advertencias=advertencias_carga,
     )

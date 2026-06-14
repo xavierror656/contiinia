@@ -83,6 +83,10 @@ def calcular_resumen(directorio: Path, recursivo: bool = False) -> ResumenLote:
     errores_detalle: list[ErrorDetalle] = []
     exitosos = 0
 
+    # QA-RES-03: monedas detectadas y CFDIs con moneda extranjera sin tipo_cambio
+    monedas_set: set[str] = set()
+    advertencias: list[str] = []
+
     for archivo in archivos:
         ruta_str = str(archivo)
         try:
@@ -110,8 +114,29 @@ def calcular_resumen(directorio: Path, recursivo: bool = False) -> ResumenLote:
         tipo = cfdi.tipo_de_comprobante
         conteo_tipo[tipo] += 1
 
-        subtotal = cfdi.subtotal or Decimal("0")
-        total = cfdi.total or Decimal("0")
+        moneda = cfdi.moneda or "MXN"
+        monedas_set.add(moneda)
+
+        subtotal_orig = cfdi.subtotal or Decimal("0")
+        total_orig = cfdi.total or Decimal("0")
+
+        # QA-RES-03: convertir a MXN si el CFDI está en moneda extranjera
+        if moneda != "MXN":
+            tc = cfdi.tipo_cambio
+            if tc is None or tc == Decimal("0"):
+                advertencias.append(
+                    f"CFDI {cfdi.uuid} en {moneda} sin TipoCambio válido; "
+                    "excluido de totales monetarios."
+                )
+                # Registrar fecha pero NO sumar a totales
+                if cfdi.fecha:
+                    fechas.append(cfdi.fecha)
+                continue
+            subtotal = subtotal_orig * tc
+            total = total_orig * tc
+        else:
+            subtotal = subtotal_orig
+            total = total_orig
 
         # Registrar fecha para período
         if cfdi.fecha:
@@ -119,6 +144,9 @@ def calcular_resumen(directorio: Path, recursivo: bool = False) -> ResumenLote:
 
         traslados_globales = cfdi.impuestos.traslados if cfdi.impuestos else []
         retenciones_globales = cfdi.impuestos.retenciones if cfdi.impuestos else []
+
+        # Factor de conversión a MXN (1 para MXN nativo)
+        tc_factor = (cfdi.tipo_cambio or Decimal("1")) if moneda != "MXN" else Decimal("1")
 
         # --- Contabilización por tipo ---
         if tipo == "I":
@@ -129,30 +157,30 @@ def calcular_resumen(directorio: Path, recursivo: bool = False) -> ResumenLote:
             if cfdi.metodo_pago == "PPD" and not cfdi.complemento_pago_detectado:
                 ppd_uuids.append(cfdi.uuid or ruta_str)
 
-            # IVA trasladado: tipo I suma
+            # IVA trasladado: tipo I suma (convertido a MXN)
             for t in traslados_globales:
                 if t.impuesto == "002":  # IVA
                     clave = (t.tipo_factor, str(t.tasa_o_cuota) if t.tasa_o_cuota is not None else None)
-                    iva_base[clave] += t.base or Decimal("0")
-                    iva_importe[clave] += t.importe or Decimal("0")
+                    iva_base[clave] += (t.base or Decimal("0")) * tc_factor
+                    iva_importe[clave] += (t.importe or Decimal("0")) * tc_factor
 
-            # Retenciones de tipo I
+            # Retenciones de tipo I (convertidas a MXN)
             for r in retenciones_globales:
                 if r.impuesto == "002":
-                    total_iva_retenido += r.importe or Decimal("0")
+                    total_iva_retenido += (r.importe or Decimal("0")) * tc_factor
                 elif r.impuesto == "001":
-                    total_isr_retenido += r.importe or Decimal("0")
+                    total_isr_retenido += (r.importe or Decimal("0")) * tc_factor
 
         elif tipo == "E":
             subtotal_e += subtotal
             total_e += total
 
-            # IVA trasladado: tipo E resta
+            # IVA trasladado: tipo E resta (convertido a MXN)
             for t in traslados_globales:
                 if t.impuesto == "002":
                     clave = (t.tipo_factor, str(t.tasa_o_cuota) if t.tasa_o_cuota is not None else None)
-                    iva_base[clave] -= t.base or Decimal("0")
-                    iva_importe[clave] -= t.importe or Decimal("0")
+                    iva_base[clave] -= (t.base or Decimal("0")) * tc_factor
+                    iva_importe[clave] -= (t.importe or Decimal("0")) * tc_factor
 
         elif tipo == "N":
             nomina_count += 1
@@ -208,10 +236,22 @@ def calcular_resumen(directorio: Path, recursivo: bool = False) -> ResumenLote:
     fecha_min = min(fechas) if fechas else None
     fecha_max = max(fechas) if fechas else None
 
+    # QA-RES-02: advertencia si hay PPD sin complemento (IVA devengado, no cobrado)
+    if ppd_uuids:
+        advertencias.append(
+            f"{len(ppd_uuids)} CFDI(s) PPD sin complemento de pago detectado. "
+            "El IVA trasladado incluye importes devengados aún no cobrados; "
+            "revisar pagos_ppd_sin_complemento para detalle."
+        )
+
+    # QA-RES-03: lista de monedas detectadas (ordenada, MXN primero si existe)
+    monedas_lista = sorted(monedas_set, key=lambda m: (0 if m == "MXN" else 1, m))
+
     return ResumenLote(
         directorio=str(directorio),
         recursivo=recursivo,
         moneda_base="MXN",
+        monedas_detectadas=monedas_lista,
         periodo=ResumenPeriodo(fecha_min=fecha_min, fecha_max=fecha_max),
         conteo=ResumenConteo(
             total_archivos=len(archivos),
@@ -244,5 +284,5 @@ def calcular_resumen(directorio: Path, recursivo: bool = False) -> ResumenLote:
         ),
         traslados=ResumenTraslados(count=traslado_count),
         errores_detalle=errores_detalle,
-        advertencias=[],
+        advertencias=advertencias,
     )

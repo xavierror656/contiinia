@@ -32,6 +32,15 @@ NS_TFD = "http://www.sat.gob.mx/TimbreFiscalDigital"
 NS_PAGOS20 = "http://www.sat.gob.mx/Pagos20"
 NS_PAGOS = "http://www.sat.gob.mx/Pagos"
 
+# QA-XML-01: tasas IVA reconocidas (impuesto 002).
+# None corresponde a TipoFactor=Exento (sin TasaOCuota en el XML).
+_TASAS_IVA_CONOCIDAS: frozenset[Decimal | None] = frozenset([
+    Decimal("0.160000"),
+    Decimal("0.080000"),
+    Decimal("0.000000"),
+    None,
+])
+
 
 def _d(value: str | None) -> Decimal | None:
     """Convierte string a Decimal; None si value es None."""
@@ -225,6 +234,19 @@ def parsear_xml(ruta: str | Path) -> CfdiXml:
             archivo=str(ruta),
         )
 
+    # QA-XML-01: detectar tasas IVA desconocidas y emitir advertencia (no rechazo)
+    advertencias: list[str] = []
+    traslados_para_revisar = (
+        (impuestos_globales.traslados if impuestos_globales else [])
+        + [t for c in conceptos for t in c.impuestos.traslados]
+    )
+    tasas_desconocidas: set[str] = set()
+    for t in traslados_para_revisar:
+        if t.impuesto == "002" and t.tasa_o_cuota not in _TASAS_IVA_CONOCIDAS:
+            tasas_desconocidas.add(str(t.tasa_o_cuota))
+    for tasa in sorted(tasas_desconocidas):
+        advertencias.append(f"Tasa IVA no reconocida: {tasa}. Tasas esperadas: 0.160000, 0.080000, 0.000000, Exento.")
+
     return CfdiXml(
         uuid=uuid,
         version=attr(root, "Version", required=True),
@@ -251,5 +273,5 @@ def parsear_xml(ruta: str | Path) -> CfdiXml:
         impuestos=impuestos_globales,
         complemento_timbre=complemento_timbre,
         complemento_pago_detectado=complemento_pago_detectado,
-        advertencias=[],
+        advertencias=advertencias,
     )

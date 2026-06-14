@@ -79,6 +79,7 @@ class ResumenLote(BaseModel):
     directorio: str
     recursivo: bool
     moneda_base: str
+    monedas_detectadas: list[str] = []  # QA-RES-03: monedas encontradas (incl. base)
     periodo: ResumenPeriodo
     conteo: ResumenConteo
     totales: ResumenTotales

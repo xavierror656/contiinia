@@ -35,6 +35,11 @@ def cmd_lote(
     try:
         result = parsear_lote(directorio, recursivo=recursivo)
         print(result.model_dump_json(exclude_none=True), flush=True)
+        # QA-LOT-01: si hay archivos pero ninguno procesó correctamente → exit 1
+        if result.total_archivos > 0 and result.exitosos == 0:
+            raise typer.Exit(1)
+    except typer.Exit:
+        raise
     except ContiiniaError as exc:
         emit_error(exc)
     except Exception as exc:
