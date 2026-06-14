@@ -9,6 +9,6 @@ class VersionInfo(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     cli: str = "contiinia"
-    version: str = "1.2.0"
+    version: str = "1.2.1"
     cfdi_soportados: list[str] = ["4.0"]
     spec_version: str = "1.1"
