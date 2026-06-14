@@ -47,16 +47,16 @@ def test_cmd_ingreso_uuid_mayusculas() -> None:
     """CA-XML-11: UUID en mayúsculas, contiene '9001'."""
     result = runner.invoke(app, ["xml", fx("cfdi_ingreso.xml")])
     data = json.loads(result.output)
-    uuid = data["timbre"]["uuid"]
+    uuid = data["uuid"]
     assert uuid == uuid.upper()
     assert "9001" in uuid
 
 
 def test_cmd_ingreso_iva_16_traslado_global() -> None:
-    """CA-XML-14: IVA 16% → tasa_o_cuota='0.160000' en traslados_globales."""
+    """CA-XML-14: IVA 16% → tasa_o_cuota='0.160000' en impuestos.traslados."""
     result = runner.invoke(app, ["xml", fx("cfdi_ingreso.xml")])
     data = json.loads(result.output)
-    tasas = [t["tasa_o_cuota"] for t in data.get("traslados_globales", [])]
+    tasas = [t["tasa_o_cuota"] for t in data.get("impuestos", {}).get("traslados", [])]
     assert "0.160000" in tasas
 
 
@@ -227,7 +227,7 @@ def test_cmd_iva_frontera_tasa_8() -> None:
     result = runner.invoke(app, ["xml", fx("cfdi_iva_frontera.xml")])
     assert result.exit_code == 0
     data = json.loads(result.output)
-    tasas = [t["tasa_o_cuota"] for t in data.get("traslados_globales", [])]
+    tasas = [t["tasa_o_cuota"] for t in data.get("impuestos", {}).get("traslados", [])]
     assert "0.080000" in tasas
 
 
@@ -241,7 +241,7 @@ def test_cmd_iva_exento_tipo_factor() -> None:
     result = runner.invoke(app, ["xml", fx("cfdi_iva_exento.xml")])
     assert result.exit_code == 0
     data = json.loads(result.output)
-    factores = [t["tipo_factor"] for t in data.get("traslados_globales", [])]
+    factores = [t["tipo_factor"] for t in data.get("impuestos", {}).get("traslados", [])]
     assert "Exento" in factores
 
 

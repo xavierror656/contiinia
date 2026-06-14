@@ -91,7 +91,7 @@ def test_egreso_iva_traslado_importe() -> None:
     """ADV-XML-02d: traslado de egreso tiene importe '80.00'."""
     cfdi = parsear_xml(fx("cfdi_egreso.xml"))
     data = json.loads(cfdi.model_dump_json())
-    importes_traslados = [t["importe"] for t in data.get("traslados_globales", [])]
+    importes_traslados = [t["importe"] for t in data.get("impuestos", {}).get("traslados", [])]
     assert "80.00" in importes_traslados
 
 
@@ -104,7 +104,7 @@ def test_iva_frontera_tasa_exacta() -> None:
     """ADV-XML-03: tasa_o_cuota en traslado global == '0.080000' exacto."""
     cfdi = parsear_xml(fx("cfdi_iva_frontera.xml"))
     data = json.loads(cfdi.model_dump_json())
-    tasas = [t["tasa_o_cuota"] for t in data.get("traslados_globales", [])]
+    tasas = [t["tasa_o_cuota"] for t in data.get("impuestos", {}).get("traslados", [])]
     assert "0.080000" in tasas
     # No debe haber "0.08" (pérdida de ceros) ni "0.0800000" (dígitos extra)
     assert "0.08" not in tasas
@@ -118,7 +118,7 @@ def test_iva_frontera_tasa_en_concepto() -> None:
     tasas_concepto = [
         t["tasa_o_cuota"]
         for c in data.get("conceptos", [])
-        for t in c.get("traslados", [])
+        for t in c.get("impuestos", {}).get("traslados", [])
     ]
     assert "0.080000" in tasas_concepto
 
@@ -131,23 +131,24 @@ def test_iva_frontera_tasa_en_concepto() -> None:
 def test_iva_exento_tipo_factor_exento() -> None:
     """ADV-XML-04: traslado global tiene tipo_factor == 'Exento'."""
     cfdi = parsear_xml(fx("cfdi_iva_exento.xml"))
-    traslado_global = cfdi.traslados_globales[0]
-    assert traslado_global.tipo_factor == "Exento"
+    traslados = cfdi.impuestos.traslados if cfdi.impuestos else []
+    assert len(traslados) >= 1
+    assert traslados[0].tipo_factor == "Exento"
 
 
 def test_iva_exento_tasa_o_cuota_none() -> None:
     """ADV-XML-04b: tasa_o_cuota es None cuando TipoFactor='Exento'."""
     cfdi = parsear_xml(fx("cfdi_iva_exento.xml"))
-    traslado_global = cfdi.traslados_globales[0]
-    assert traslado_global.tasa_o_cuota is None
+    traslados = cfdi.impuestos.traslados if cfdi.impuestos else []
+    assert len(traslados) >= 1
+    assert traslados[0].tasa_o_cuota is None
 
 
 def test_iva_exento_tasa_ausente_en_json() -> None:
     """ADV-XML-04c: 'tasa_o_cuota' no aparece en JSON cuando es None (exclude_none)."""
     cfdi = parsear_xml(fx("cfdi_iva_exento.xml"))
     data = json.loads(cfdi.model_dump_json(exclude_none=True))
-    # El traslado global exento no debe tener tasa_o_cuota en el JSON
-    for t in data.get("traslados_globales", []):
+    for t in data.get("impuestos", {}).get("traslados", []):
         if t.get("tipo_factor") == "Exento":
             assert "tasa_o_cuota" not in t, (
                 f"tasa_o_cuota presente en traslado Exento: {t}"
@@ -157,8 +158,9 @@ def test_iva_exento_tasa_ausente_en_json() -> None:
 def test_iva_exento_importe_ausente_en_json() -> None:
     """ADV-XML-04d: 'importe' también ausente en traslado Exento (no hay importe de IVA)."""
     cfdi = parsear_xml(fx("cfdi_iva_exento.xml"))
-    traslado_global = cfdi.traslados_globales[0]
-    assert traslado_global.importe is None
+    traslados = cfdi.impuestos.traslados if cfdi.impuestos else []
+    assert len(traslados) >= 1
+    assert traslados[0].importe is None
 
 
 # ---------------------------------------------------------------------------
@@ -614,9 +616,7 @@ def test_xml_sin_receptor_lanza_business_error() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_xml_cfdi_usd_parsea_sin_error() -> None:
-    """ADV-XML-12: CFDI con Moneda='USD' se parsea sin errores."""
-    xml_usd = """\
+_XML_USD = """\
 <?xml version="1.0" encoding="UTF-8"?>
 <cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4"
   Version="4.0" Serie="A" Folio="5000" Fecha="2024-03-15T10:00:00"
@@ -632,8 +632,19 @@ def test_xml_cfdi_usd_parsea_sin_error() -> None:
       Cantidad="5.000" Descripcion="Servicio en dolares"
       ValorUnitario="100.00" Importe="500.00" ObjetoImp="02"/>
   </cfdi:Conceptos>
+  <cfdi:Complemento>
+    <tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital"
+      Version="1.1" UUID="AAAAAAAA-0000-0000-0000-000000000099"
+      FechaTimbrado="2024-03-15T10:05:00" RfcProvCertif="SAT970701NN3"
+      NoCertificadoSAT="20001000000300022323"/>
+  </cfdi:Complemento>
 </cfdi:Comprobante>
 """
+
+
+def test_xml_cfdi_usd_parsea_sin_error() -> None:
+    """ADV-XML-12: CFDI con Moneda='USD' se parsea sin errores."""
+    xml_usd = _XML_USD
     with tempfile.NamedTemporaryFile(suffix=".xml", mode="w", encoding="utf-8", delete=False) as f:
         f.write(xml_usd)
         ruta_tmp = f.name
@@ -650,24 +661,7 @@ def test_xml_cfdi_usd_parsea_sin_error() -> None:
 
 def test_xml_cfdi_usd_tipo_cambio_como_string_en_json() -> None:
     """ADV-XML-12b: TipoCambio en JSON es string, no float."""
-    xml_usd = """\
-<?xml version="1.0" encoding="UTF-8"?>
-<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4"
-  Version="4.0" Serie="A" Folio="5000" Fecha="2024-03-15T10:00:00"
-  Sello="X" NoCertificado="00001" Certificado="X"
-  SubTotal="500.00" Moneda="USD" TipoCambio="17.50" Total="580.00"
-  TipoDeComprobante="I" Exportacion="02" LugarExpedicion="06600">
-  <cfdi:Emisor Rfc="AAA010101AAA" Nombre="X" RegimenFiscal="601"/>
-  <cfdi:Receptor Rfc="BBB020202BBB" Nombre="X"
-    DomicilioFiscalReceptor="64000" RegimenFiscalReceptor="601"
-    UsoCFDI="G01"/>
-  <cfdi:Conceptos>
-    <cfdi:Concepto ClaveProdServ="81161500" ClaveUnidad="H87"
-      Cantidad="5.000" Descripcion="Servicio en dolares"
-      ValorUnitario="100.00" Importe="500.00" ObjetoImp="02"/>
-  </cfdi:Conceptos>
-</cfdi:Comprobante>
-"""
+    xml_usd = _XML_USD
     with tempfile.NamedTemporaryFile(suffix=".xml", mode="w", encoding="utf-8", delete=False) as f:
         f.write(xml_usd)
         ruta_tmp = f.name
@@ -714,12 +708,10 @@ def test_cfdi_tipo_T_valores_conocidos() -> None:
 def test_cfdi_tipo_I_uuid_concreto() -> None:
     """ADV-XML-13d: cfdi_ingreso.xml → UUID '...123456789001'."""
     cfdi = parsear_xml(fx("cfdi_ingreso.xml"))
-    assert cfdi.timbre is not None
-    assert cfdi.timbre.uuid.endswith("123456789001")
+    assert cfdi.uuid.endswith("123456789001")
 
 
 def test_cfdi_tipo_E_uuid_concreto() -> None:
     """ADV-XML-13e: cfdi_egreso.xml → UUID '...123456789002'."""
     cfdi = parsear_xml(fx("cfdi_egreso.xml"))
-    assert cfdi.timbre is not None
-    assert cfdi.timbre.uuid.endswith("123456789002")
+    assert cfdi.uuid.endswith("123456789002")

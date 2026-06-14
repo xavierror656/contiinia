@@ -35,15 +35,14 @@ def test_ingreso_total_string() -> None:
 def test_ingreso_uuid_mayusculas() -> None:
     """CA-XML-11: UUID normalizado a mayúsculas."""
     result = parsear_xml(fx("cfdi_ingreso.xml"))
-    assert result.timbre is not None
-    assert result.timbre.uuid == result.timbre.uuid.upper()
-    assert "9001" in result.timbre.uuid
+    assert result.uuid == result.uuid.upper()
+    assert "9001" in result.uuid
 
 
 def test_ingreso_iva_16() -> None:
     """CA-XML-14: IVA 16% → tasa_o_cuota='0.160000'."""
     result = parsear_xml(fx("cfdi_ingreso.xml"))
-    traslados = result.traslados_globales
+    traslados = result.impuestos.traslados if result.impuestos else []
     assert len(traslados) >= 1
     tasas = [str(t.tasa_o_cuota) for t in traslados]
     assert "0.160000" in tasas
@@ -69,8 +68,8 @@ def test_ingreso_conceptos() -> None:
     assert len(result.conceptos) == 1
     c = result.conceptos[0]
     assert c.clave_prod_serv == "81161500"
-    assert len(c.traslados) == 1
-    assert c.traslados[0].tipo_factor == "Tasa"
+    assert len(c.impuestos.traslados) == 1
+    assert c.impuestos.traslados[0].tipo_factor == "Tasa"
 
 
 # ---------------------------------------------------------------------------
@@ -177,8 +176,7 @@ def test_decimales_serializados_como_string() -> None:
 def test_uuid_mayusculas() -> None:
     """CA-XML-11: UUID normalizado a mayúsculas."""
     result = parsear_xml(fx("cfdi_ingreso.xml"))
-    assert result.timbre is not None
-    assert result.timbre.uuid == result.timbre.uuid.upper()
+    assert result.uuid == result.uuid.upper()
 
 
 # ---------------------------------------------------------------------------
@@ -189,7 +187,7 @@ def test_uuid_mayusculas() -> None:
 def test_iva_frontera_tasa_8() -> None:
     """CA-XML-14: IVA 8% → tasa_o_cuota='0.080000'."""
     result = parsear_xml(fx("cfdi_iva_frontera.xml"))
-    traslados = result.traslados_globales
+    traslados = result.impuestos.traslados if result.impuestos else []
     tasas = [str(t.tasa_o_cuota) for t in traslados]
     assert "0.080000" in tasas
 
@@ -202,7 +200,7 @@ def test_iva_frontera_tasa_8() -> None:
 def test_iva_exento_tipo_factor() -> None:
     """CFDI con TipoFactor=Exento → parseado sin error."""
     result = parsear_xml(fx("cfdi_iva_exento.xml"))
-    traslados = result.traslados_globales
+    traslados = result.impuestos.traslados if result.impuestos else []
     assert len(traslados) >= 1
     factores = [t.tipo_factor for t in traslados]
     assert "Exento" in factores
@@ -211,7 +209,8 @@ def test_iva_exento_tipo_factor() -> None:
 def test_iva_exento_tasa_none() -> None:
     """CFDI exento: TasaOCuota es None (no presente en XML)."""
     result = parsear_xml(fx("cfdi_iva_exento.xml"))
-    exentos = [t for t in result.traslados_globales if t.tipo_factor == "Exento"]
+    traslados = result.impuestos.traslados if result.impuestos else []
+    exentos = [t for t in traslados if t.tipo_factor == "Exento"]
     assert len(exentos) >= 1
     assert exentos[0].tasa_o_cuota is None
 
@@ -224,5 +223,5 @@ def test_iva_exento_tasa_none() -> None:
 def test_ingreso_tiene_timbre() -> None:
     """CFDI ingreso: ComplementoTimbre presente."""
     result = parsear_xml(fx("cfdi_ingreso.xml"))
-    assert result.timbre is not None
-    assert result.timbre.rfc_prov_certif == "SAT970701NN3"
+    assert result.complemento_timbre is not None
+    assert result.complemento_timbre.rfc_prov_certif == "SAT970701NN3"

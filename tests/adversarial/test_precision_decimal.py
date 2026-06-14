@@ -92,7 +92,7 @@ def test_ingreso_traslados_tasa_o_cuota_es_string() -> None:
     """ADV-DEC-01f: tasa_o_cuota en traslados es str."""
     cfdi = parsear_xml(fx("cfdi_ingreso.xml"))
     data = json.loads(cfdi.model_dump_json())
-    for t in data.get("traslados_globales", []):
+    for t in data.get("impuestos", {}).get("traslados", []):
         if "tasa_o_cuota" in t:
             assert isinstance(t["tasa_o_cuota"], str), (
                 f"tasa_o_cuota debe ser str: {t['tasa_o_cuota']!r}"
@@ -103,7 +103,7 @@ def test_ingreso_traslados_importe_es_string() -> None:
     """ADV-DEC-01g: importe en traslados globales es str."""
     cfdi = parsear_xml(fx("cfdi_ingreso.xml"))
     data = json.loads(cfdi.model_dump_json())
-    for t in data.get("traslados_globales", []):
+    for t in data.get("impuestos", {}).get("traslados", []):
         if "importe" in t:
             assert isinstance(t["importe"], str), (
                 f"importe de traslado debe ser str: {t['importe']!r}"
@@ -140,6 +140,12 @@ _XML_MONTO_GRANDE = """\
       Cantidad="1.000" Descripcion="Monto maximo"
       ValorUnitario="999999999.99" Importe="999999999.99" ObjetoImp="02"/>
   </cfdi:Conceptos>
+  <cfdi:Complemento>
+    <tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital"
+      Version="1.1" UUID="AAAAAAAA-0000-0000-0000-000000000002"
+      FechaTimbrado="2024-03-15T10:05:00" RfcProvCertif="SAT970701NN3"
+      NoCertificadoSAT="20001000000300022323"/>
+  </cfdi:Complemento>
 </cfdi:Comprobante>
 """
 
@@ -223,7 +229,7 @@ def test_decimal_roundtrip_tasa_iva() -> None:
     """ADV-DEC-03c: Decimal('0.160000') == Decimal(tasa_o_cuota) en traslado."""
     cfdi = parsear_xml(fx("cfdi_ingreso.xml"))
     data = json.loads(cfdi.model_dump_json())
-    tasa = data["traslados_globales"][0]["tasa_o_cuota"]
+    tasa = data["impuestos"]["traslados"][0]["tasa_o_cuota"]
     assert Decimal("0.160000") == Decimal(tasa), (
         f"Tasa IVA: Decimal('0.160000') != Decimal({tasa!r})"
     )
@@ -233,7 +239,7 @@ def test_decimal_roundtrip_tasa_frontera() -> None:
     """ADV-DEC-03d: Decimal('0.080000') == Decimal(tasa) en fixture frontera."""
     cfdi = parsear_xml(fx("cfdi_iva_frontera.xml"))
     data = json.loads(cfdi.model_dump_json())
-    tasa = data["traslados_globales"][0]["tasa_o_cuota"]
+    tasa = data["impuestos"]["traslados"][0]["tasa_o_cuota"]
     assert Decimal("0.080000") == Decimal(tasa), (
         f"Tasa frontera: Decimal('0.080000') != Decimal({tasa!r})"
     )
@@ -266,6 +272,12 @@ _XML_DECIMALES_PRECISION = """\
       Cantidad="0.000001" Descripcion="Micro importe"
       ValorUnitario="1.000000" Importe="0.000001" ObjetoImp="02"/>
   </cfdi:Conceptos>
+  <cfdi:Complemento>
+    <tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital"
+      Version="1.1" UUID="AAAAAAAA-0000-0000-0000-000000000003"
+      FechaTimbrado="2024-03-15T10:05:00" RfcProvCertif="SAT970701NN3"
+      NoCertificadoSAT="20001000000300022323"/>
+  </cfdi:Complemento>
 </cfdi:Comprobante>
 """
 
@@ -330,7 +342,7 @@ def test_tasa_iva_preserva_6_decimales_en_string() -> None:
     """
     cfdi = parsear_xml(fx("cfdi_ingreso.xml"))
     data = json.loads(cfdi.model_dump_json())
-    tasa = data["traslados_globales"][0]["tasa_o_cuota"]
+    tasa = data["impuestos"]["traslados"][0]["tasa_o_cuota"]
     assert tasa == "0.160000", (
         f"tasa_o_cuota esperada '0.160000', obtenida {tasa!r}. "
         f"Posible perdida de ceros significativos."
@@ -341,7 +353,7 @@ def test_tasa_frontera_preserva_6_decimales_en_string() -> None:
     """ADV-DEC-06b: tasa_o_cuota '0.080000' conserva exactamente 6 decimales."""
     cfdi = parsear_xml(fx("cfdi_iva_frontera.xml"))
     data = json.loads(cfdi.model_dump_json())
-    tasa = data["traslados_globales"][0]["tasa_o_cuota"]
+    tasa = data["impuestos"]["traslados"][0]["tasa_o_cuota"]
     assert tasa == "0.080000", (
         f"tasa_o_cuota esperada '0.080000', obtenida {tasa!r}."
     )
