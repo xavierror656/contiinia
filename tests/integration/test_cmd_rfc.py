@@ -11,7 +11,7 @@ runner = CliRunner()
 
 def test_rfc_valido_exit_cero() -> None:
     """CA-RFC-04: RFC persona moral válido → exit 0, valido=true."""
-    result = runner.invoke(app, ["rfc", "AAA010101AAA"])
+    result = runner.invoke(app, ["rfc", "SAT970701NN3"])
     assert result.exit_code == 0, f"output: {result.output}"
     data = json.loads(result.output)
     assert data["valido"] is True
@@ -38,7 +38,7 @@ def test_rfc_generico_extranjero_exit_cero() -> None:
 
 def test_rfc_persona_fisica_exit_cero() -> None:
     """CA-RFC-03: RFC persona física válido → exit 0, tipo=fisica."""
-    result = runner.invoke(app, ["rfc", "AAAA010101AAA"])
+    result = runner.invoke(app, ["rfc", "GODE561231GR8"])
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert data["valido"] is True
@@ -101,7 +101,7 @@ def test_rfc_schema_no_requiere_argumento() -> None:
 
 def test_rfc_emite_json_a_stdout() -> None:
     """Principio 2: toda salida es JSON; no hay texto libre."""
-    result = runner.invoke(app, ["rfc", "AAA010101AAA"])
+    result = runner.invoke(app, ["rfc", "SAT970701NN3"])
     # Debe poder parsearse como JSON sin excepciones
     data = json.loads(result.output)
     assert isinstance(data, dict)
@@ -118,6 +118,15 @@ def test_rfc_invalido_no_incluye_tipo() -> None:
 
 def test_rfc_valido_no_incluye_motivo() -> None:
     """Un RFC válido no debe incluir el campo motivo en la salida JSON."""
-    result = runner.invoke(app, ["rfc", "AAA010101AAA"])
+    result = runner.invoke(app, ["rfc", "SAT970701NN3"])
     data = json.loads(result.output)
     assert "motivo" not in data
+
+
+def test_rfc_digito_verificador_incorrecto_exit_uno() -> None:
+    """CA-RFC-08: RFC con dígito verificador incorrecto → exit 1, motivo correcto."""
+    result = runner.invoke(app, ["rfc", "AAA010101AAA"])
+    assert result.exit_code == 1
+    data = json.loads(result.output)
+    assert data["valido"] is False
+    assert data["motivo"] == "digito_verificador_incorrecto"

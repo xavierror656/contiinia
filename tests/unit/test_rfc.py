@@ -4,6 +4,12 @@ import pytest
 
 from contiinia.parsers.rfc import validar_rfc
 
+# RFCs con dígito verificador correcto (verificados con algoritmo SAT Anexo 20):
+# SAT970701NN3 — moral  (suma=937 → 937%11=2 → 11-2=9... wait, verified independently)
+# GODE561231GR8 — física (from python-stdnum docs)
+_RFC_MORAL_VALIDO = "SAT970701NN3"
+_RFC_FISICA_VALIDO = "GODE561231GR8"
+
 
 # ---------------------------------------------------------------------------
 # Casos válidos
@@ -30,7 +36,7 @@ def test_rfc_generico_extranjero() -> None:
 
 def test_rfc_persona_fisica_valido() -> None:
     """CA-RFC-03: RFC de persona física con 13 caracteres válidos."""
-    result = validar_rfc("AAAA010101AAA")
+    result = validar_rfc(_RFC_FISICA_VALIDO)
     assert result.valido is True
     assert result.tipo == "fisica"
     assert result.longitud == 13
@@ -39,7 +45,7 @@ def test_rfc_persona_fisica_valido() -> None:
 
 def test_rfc_persona_moral_valido() -> None:
     """CA-RFC-04: RFC de persona moral con 12 caracteres válidos."""
-    result = validar_rfc("AAA010101AAA")
+    result = validar_rfc(_RFC_MORAL_VALIDO)
     assert result.valido is True
     assert result.tipo == "moral"
     assert result.longitud == 12
@@ -48,7 +54,7 @@ def test_rfc_persona_moral_valido() -> None:
 
 def test_rfc_con_n_valido() -> None:
     """RFC con Ñ en la parte de letras iniciales (persona física, 4 letras)."""
-    # ÑOÑO tiene 4 letras: Ñ O Ñ O — estructura persona física si tiene 13 chars total
+    # ÑAÑA010101AAA: dígito verificador correcto = 'A' (verificado)
     result = validar_rfc("ÑAÑA010101AAA")
     assert result.valido is True
     assert result.tipo == "fisica"
@@ -56,23 +62,25 @@ def test_rfc_con_n_valido() -> None:
 
 def test_rfc_con_ampersand_valido() -> None:
     """RFC con & (ampersand) en la parte de letras (persona moral)."""
-    result = validar_rfc("A&A010101AAA")
+    # A&A010101AA1: dígito verificador correcto = '1' (verificado)
+    result = validar_rfc("A&A010101AA1")
     assert result.valido is True
     assert result.tipo == "moral"
 
 
 def test_rfc_persona_moral_homoclave_numerica() -> None:
-    """Homoclave con dígitos: AAA0101011A2 (persona moral)."""
-    result = validar_rfc("AAA0101011A2")
+    """Homoclave con dígitos: AAA0101011A6 (persona moral)."""
+    # AAA0101011A6: dígito verificador correcto = '6' (verificado)
+    result = validar_rfc("AAA0101011A6")
     assert result.valido is True
     assert result.tipo == "moral"
 
 
 def test_rfc_minusculas_normalizado() -> None:
     """QA-RFC-01 (decisión provisional): minúsculas se normalizan a mayúsculas."""
-    result = validar_rfc("aaa010101aaa")
+    result = validar_rfc("sat970701nn3")
     assert result.valido is True
-    assert result.rfc == "AAA010101AAA"
+    assert result.rfc == "SAT970701NN3"
     assert result.tipo == "moral"
 
 
@@ -182,10 +190,53 @@ def test_rfc_fecha_febrero_invalida() -> None:
 
 def test_rfc_siglo_ambiguo_aceptado() -> None:
     """RFC con año ambiguo (99) → válido porque 1999-12-31 es fecha pasada válida."""
-    # aa=99 podría ser 2099 (futuro) o 1999 (pasado).
-    # Se acepta porque al menos un siglo produce fecha pasada válida.
-    result = validar_rfc("AAA991231AAA")
+    # AAA991231AA4: dígito verificador correcto = '4' (verificado)
+    # aa=99 podría ser 2099 (futuro) o 1999 (pasado) → se acepta por el pasado
+    result = validar_rfc("AAA991231AA4")
     assert result.valido is True
+
+
+# ---------------------------------------------------------------------------
+# CA-RFC-08: dígito verificador
+# ---------------------------------------------------------------------------
+
+
+def test_rfc_digito_verificador_correcto_moral() -> None:
+    """CA-RFC-08: RFC moral con dígito verificador correcto → válido."""
+    result = validar_rfc("SAT970701NN3")
+    assert result.valido is True
+    assert result.motivo is None
+
+
+def test_rfc_digito_verificador_correcto_fisica() -> None:
+    """CA-RFC-08: RFC física con dígito verificador correcto → válido."""
+    result = validar_rfc("GODE561231GR8")
+    assert result.valido is True
+    assert result.motivo is None
+
+
+def test_rfc_digito_verificador_incorrecto_moral() -> None:
+    """CA-RFC-08: RFC moral con dígito verificador incorrecto → motivo='digito_verificador_incorrecto'."""
+    # AAA010101AAA tiene dígito esperado '1', pero termina en 'A'
+    result = validar_rfc("AAA010101AAA")
+    assert result.valido is False
+    assert result.motivo == "digito_verificador_incorrecto"
+
+
+def test_rfc_digito_verificador_incorrecto_fisica() -> None:
+    """CA-RFC-08: RFC física con dígito verificador incorrecto → motivo='digito_verificador_incorrecto'."""
+    # AAAA010101AAA tiene dígito esperado '0', pero termina en 'A'
+    result = validar_rfc("AAAA010101AAA")
+    assert result.valido is False
+    assert result.motivo == "digito_verificador_incorrecto"
+
+
+def test_rfc_genericos_bypass_digito_verificador() -> None:
+    """CA-RFC-08: genéricos del SAT tienen bypass (XAXX tiene dígito incorrecto pero es válido)."""
+    # XAXX010101000: dígito verificador algorítmico sería '4', pero SAT lo emite como '0'
+    result = validar_rfc("XAXX010101000")
+    assert result.valido is True
+    assert result.tipo == "generico_nacional"
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +246,7 @@ def test_rfc_siglo_ambiguo_aceptado() -> None:
 
 def test_rfc_valido_json_no_contiene_motivo() -> None:
     """Un RFC válido no debe incluir el campo motivo en el JSON serializado."""
-    result = validar_rfc("AAA010101AAA")
+    result = validar_rfc(_RFC_MORAL_VALIDO)
     json_str = result.model_dump_json(exclude_none=True)
     assert "motivo" not in json_str
 

@@ -9,6 +9,22 @@ from contiinia.models.rfc import RfcValidation
 _RFC_GENERICO_NACIONAL = "XAXX010101000"
 _RFC_GENERICO_EXTRANJERO = "XEXX010101000"
 
+# Alfabeto para cálculo del dígito verificador (CA-RFC-08).
+# Fuente: SAT Anexo 20 / python-stdnum mx/rfc.py (LGPL, Arthur de Jong).
+# Orden: 0-9, A-N, &, O-Z, espacio, Ñ  (&=24, espacio=37, Ñ=38)
+_ALFABETO_DIGITO = "0123456789ABCDEFGHIJKLMN&OPQRSTUVWXYZ Ñ"
+
+
+def _digito_verificador(rfc_sin_ultimo: str) -> str:
+    """Calcula el dígito verificador esperado del RFC.
+
+    rfc_sin_ultimo: RFC en mayúsculas sin el último carácter (el dígito a verificar).
+    Rellena con espacio a la izquierda hasta 12 posiciones y aplica la suma ponderada mod 11.
+    """
+    padded = ("   " + rfc_sin_ultimo)[-12:]
+    check = sum(_ALFABETO_DIGITO.index(c) * (13 - i) for i, c in enumerate(padded))
+    return _ALFABETO_DIGITO[(11 - check) % 11]
+
 # Patrones de caracteres permitidos en las letras iniciales del RFC
 _LETRAS_RFC = r"[A-ZÑ&]"
 
@@ -147,5 +163,9 @@ def validar_rfc(rfc: str) -> RfcValidation:
     # --- 8. Verificar que la fecha no sea futura
     if _fecha_futura(digits_fecha):
         return RfcValidation(rfc=rfc_upper, valido=False, motivo="fecha_futura")
+
+    # --- 9. Validar dígito verificador (CA-RFC-08)
+    if rfc_upper[-1] != _digito_verificador(rfc_upper[:-1]):
+        return RfcValidation(rfc=rfc_upper, valido=False, motivo="digito_verificador_incorrecto")
 
     return RfcValidation(rfc=rfc_upper, valido=True, tipo=tipo, longitud=longitud)

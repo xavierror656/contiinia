@@ -3,6 +3,9 @@
 Objetivo: encontrar bugs en edge cases no cubiertos por los tests existentes.
 Estrategia: inputs que desafían las fronteras del regex, la normalización
 y la lógica de fecha.
+
+Todos los RFCs "válidos" en estas pruebas tienen dígito verificador correcto
+(verificado con el algoritmo SAT Anexo 20, fuente: python-stdnum mx/rfc.py).
 """
 
 import pytest
@@ -12,49 +15,46 @@ from contiinia.parsers.rfc import validar_rfc
 
 # ---------------------------------------------------------------------------
 # ADV-RFC-01: RFC con Ñ en posición inicial de persona moral (3 letras)
-# El RFC "ÑOÑO800101AAA" tiene:
-#   - Ñ en posición 0 (letra inicial, permitida por _LETRAS_RFC)
-#   - O, Ñ en posiciones 1-2 (también letras)
-#   - 800101 como fecha (1980-01-01, válida, no futura)
-#   - AAA como homoclave
-#   - Total: 12 chars → persona moral
 # ---------------------------------------------------------------------------
 
 
 def test_rfc_n_tilde_persona_moral_posicion_0() -> None:
     """ADV-RFC-01: RFC con Ñ y año ambiguo (80) → válido con siglo 1900 (1980-01-01).
 
-    ÑOÑO800101AAA es un RFC de persona física válido con 13 chars.
+    ÑOÑO800101AA1 es un RFC de persona física válido con 13 chars.
     La fecha en posición [4:10] es '800101' → año=80, mes=01, día=01.
     - Siglo 2000: 2080-01-01 → FUTURO
     - Siglo 1900: 1980-01-01 → PASADO (válido)
 
     _fecha_futura solo rechaza si TODOS los siglos posibles dan fecha futura.
     Como 1980 es pasado, el RFC debe aceptarse.
+    Dígito verificador correcto = '1' (verificado).
     """
-    assert len("ÑOÑO800101AAA") == 13
+    rfc = "ÑOÑO800101AA1"
+    assert len(rfc) == 13
 
-    result = validar_rfc("ÑOÑO800101AAA")
+    result = validar_rfc(rfc)
 
     assert result.valido is True, (
-        f"REGRESIÓN BUG-02: ÑOÑO800101AAA debería ser válido (1980-01-01 es pasado). "
+        f"REGRESIÓN BUG-02: {rfc} debería ser válido (1980-01-01 es pasado). "
         f"Resultado: {result}"
     )
     assert result.tipo == "fisica"
 
 
 def test_rfc_bug_fecha_futura_siglo_ambiguo_caso_minimo() -> None:
-    """ADV-RFC-01: caso mínimo — AAA800101AAA (moral) con año ambiguo 80 → válido.
+    """ADV-RFC-01: caso mínimo — AAA800101AA3 (moral) con año ambiguo 80 → válido.
 
     - Siglo 2000: 2080-01-01 → FUTURO
     - Siglo 1900: 1980-01-01 → PASADO (válido)
 
     _fecha_futura solo retorna True si TODOS los siglos dan fecha futura.
     Como 1980 es pasado, el RFC debe aceptarse.
+    Dígito verificador correcto = '3' (verificado).
     """
-    result = validar_rfc("AAA800101AAA")
+    result = validar_rfc("AAA800101AA3")
     assert result.valido is True, (
-        f"REGRESIÓN BUG-02: AAA800101AAA debería ser válido (1980-01-01 es pasado). "
+        f"REGRESIÓN BUG-02: AAA800101AA3 debería ser válido (1980-01-01 es pasado). "
         f"Resultado: {result}"
     )
     assert result.tipo == "moral"
@@ -62,8 +62,8 @@ def test_rfc_bug_fecha_futura_siglo_ambiguo_caso_minimo() -> None:
 
 def test_rfc_n_tilde_persona_moral_3_letras() -> None:
     """ADV-RFC-01b: ÑAÑ (3 letras con Ñ) como moral — 12 chars."""
-    # ÑAÑ010101AAA = Ñ(0) A(1) Ñ(2) 0(3) 1(4) 0(5) 1(6) 0(7) 1(8) A(9) A(10) A(11) = 12
-    rfc = "ÑAÑ010101AAA"
+    # ÑAÑ010101AA1: dígito verificador correcto = '1' (verificado)
+    rfc = "ÑAÑ010101AA1"
     assert len(rfc) == 12
     result = validar_rfc(rfc)
     assert result.valido is True
@@ -72,7 +72,7 @@ def test_rfc_n_tilde_persona_moral_3_letras() -> None:
 
 def test_rfc_n_tilde_inicio_fisica_4_letras() -> None:
     """ADV-RFC-01c: ÑOÑO como 4 letras iniciales de persona física."""
-    # ÑOÑO010101AAA = 13 chars → persona física
+    # ÑOÑO010101AAA: dígito verificador correcto = 'A' (verificado)
     rfc = "ÑOÑO010101AAA"
     assert len(rfc) == 13
     result = validar_rfc(rfc)
@@ -82,13 +82,13 @@ def test_rfc_n_tilde_inicio_fisica_4_letras() -> None:
 
 # ---------------------------------------------------------------------------
 # ADV-RFC-02: RFC con & (ampersand) — persona moral de 12 chars
-# A&A010101AAA: A(0) &(1) A(2) 0(3)1(4)0(5)1(6)0(7)1(8) A(9)A(10)A(11) = 12 chars
 # ---------------------------------------------------------------------------
 
 
 def test_rfc_ampersand_posicion_1_moral() -> None:
     """ADV-RFC-02: & en posición 1 de una moral de 12 chars — debe ser válido."""
-    rfc = "A&A010101AAA"
+    # A&A010101AA1: dígito verificador correcto = '1' (verificado)
+    rfc = "A&A010101AA1"
     assert len(rfc) == 12
     result = validar_rfc(rfc)
     assert result.valido is True
@@ -120,7 +120,6 @@ def test_rfc_ampersand_en_fecha_invalido() -> None:
 
 # ---------------------------------------------------------------------------
 # ADV-RFC-03: RFC todo numérico en posiciones de letras iniciales
-# 123010101AAA: dígitos donde deberían ir letras
 # ---------------------------------------------------------------------------
 
 
@@ -145,7 +144,6 @@ def test_rfc_numericos_en_letras_iniciales_fisica() -> None:
 
 # ---------------------------------------------------------------------------
 # ADV-RFC-04: RFC con longitud 12 pero dígitos en primeras posiciones
-# 000010101AAA — 0s donde van letras
 # ---------------------------------------------------------------------------
 
 
@@ -188,16 +186,16 @@ def test_rfc_generico_xaxx_en_minusculas() -> None:
 
 
 def test_rfc_xaxx_fecha_distinta_invalido() -> None:
-    """ADV-RFC-05d: XAXX con fecha diferente a 010101 NO es genérico — debe validarse normalmente.
+    """ADV-RFC-05d: XAXX con fecha diferente a 010101 NO es genérico — valida dígito.
 
-    Fuerza al parser a no hacer bypass para variantes similares al genérico.
+    XAXX010102000 no es el genérico exacto, pasa por validación normal.
+    Dígito verificador correcto = '0' (verificado).
     """
     # XAXX010102000 — diferente en el día (02 en vez de 01), NO es genérico exacto
     rfc = "XAXX010102000"
     result = validar_rfc(rfc)
-    # No es el genérico exacto, debe pasar por validación normal
-    # Como persona física (13 chars): XAXX → 4 letras iniciales, 010102 fecha, 000 homoclave
-    # Fecha 010102: año 01, mes 01, día 02 → 2001-01-02, válida y no futura
+    # Persona física (13 chars): XAXX → 4 letras, 010102 fecha, 000 homoclave
+    # Dígito verificador correcto = '0' → válido
     assert result.valido is True
     assert result.tipo == "fisica"
     assert result.tipo != "generico_nacional"
@@ -209,26 +207,26 @@ def test_rfc_xaxx_fecha_distinta_invalido() -> None:
 
 
 def test_rfc_minusculas_moral_normalizado() -> None:
-    """ADV-RFC-06: 'aaa010101aaa' en minúsculas → válido, rfc normalizado."""
-    result = validar_rfc("aaa010101aaa")
+    """ADV-RFC-06: 'sat970701nn3' en minúsculas → válido, rfc normalizado."""
+    result = validar_rfc("sat970701nn3")
     assert result.valido is True
-    assert result.rfc == "AAA010101AAA"
+    assert result.rfc == "SAT970701NN3"
     assert result.tipo == "moral"
 
 
 def test_rfc_minusculas_fisica_normalizado() -> None:
-    """ADV-RFC-06b: 'aaaa010101aaa' (13 chars) en minúsculas → válido, tipo física."""
-    result = validar_rfc("aaaa010101aaa")
+    """ADV-RFC-06b: 'gode561231gr8' (13 chars) en minúsculas → válido, tipo física."""
+    result = validar_rfc("gode561231gr8")
     assert result.valido is True
-    assert result.rfc == "AAAA010101AAA"
+    assert result.rfc == "GODE561231GR8"
     assert result.tipo == "fisica"
 
 
 def test_rfc_mixcase_normalizado() -> None:
-    """ADV-RFC-06c: 'AaA010101aAa' — mezcla de mayúsculas y minúsculas."""
-    result = validar_rfc("AaA010101aAa")
+    """ADV-RFC-06c: 'SaT970701nN3' — mezcla de mayúsculas y minúsculas."""
+    result = validar_rfc("SaT970701nN3")
     assert result.valido is True
-    assert result.rfc == "AAA010101AAA"
+    assert result.rfc == "SAT970701NN3"
 
 
 # ---------------------------------------------------------------------------
@@ -264,15 +262,15 @@ def test_rfc_espacios_en_medio() -> None:
 
 
 def test_rfc_espacio_inicial() -> None:
-    """ADV-RFC-08b: ' AAA010101AAA' — espacio al inicio."""
-    result = validar_rfc(" AAA010101AAA")
+    """ADV-RFC-08b: ' SAT970701NN3' — espacio al inicio."""
+    result = validar_rfc(" SAT970701NN3")
     assert result.valido is False
     assert result.motivo == "caracteres_invalidos"
 
 
 def test_rfc_espacio_final() -> None:
-    """ADV-RFC-08c: 'AAA010101AAA ' — espacio al final."""
-    result = validar_rfc("AAA010101AAA ")
+    """ADV-RFC-08c: 'SAT970701NN3 ' — espacio al final."""
+    result = validar_rfc("SAT970701NN3 ")
     assert result.valido is False
     assert result.motivo == "caracteres_invalidos"
 
@@ -294,9 +292,6 @@ def test_rfc_29_feb_no_bisiesto() -> None:
 
     2001 no es bisiesto; 1901 tampoco. Ambos siglos fallan.
     """
-    # fecha_offset=3 para moral, así que los 6 dígitos son posiciones [3:9]
-    # AAA 01 02 29 AAA → año=01, mes=02, día=29
-    # 2001-02-29 → inválido; 1901-02-29 → inválido
     result = validar_rfc("AAA010229AAA")
     assert result.valido is False
     assert result.motivo == "fecha_invalida"
@@ -322,15 +317,17 @@ def test_rfc_fecha_dia_00() -> None:
 
 
 def test_rfc_homoclave_con_numeros() -> None:
-    """ADV-RFC-10: homoclave alfanumérica — '1A2' en posición final."""
-    result = validar_rfc("AAA0101011A2")
+    """ADV-RFC-10: homoclave alfanumérica — dígito verificador correcto."""
+    # AAA0101011A6: dígito verificador correcto = '6' (verificado)
+    result = validar_rfc("AAA0101011A6")
     assert result.valido is True
     assert result.tipo == "moral"
 
 
 def test_rfc_homoclave_todo_numeros() -> None:
-    """ADV-RFC-10b: homoclave '123' (solo dígitos) — debe ser válido."""
-    result = validar_rfc("AAA010101123")
+    """ADV-RFC-10b: homoclave '120' (solo dígitos) — debe ser válido."""
+    # AAA010101120: dígito verificador correcto = '0' (verificado)
+    result = validar_rfc("AAA010101120")
     assert result.valido is True
     assert result.tipo == "moral"
 
@@ -342,7 +339,7 @@ def test_rfc_homoclave_todo_numeros() -> None:
 
 def test_rfc_valido_contiene_tipo_y_longitud() -> None:
     """ADV-RFC-11: RFC válido debe tener tipo y longitud en el resultado."""
-    result = validar_rfc("AAA010101AAA")
+    result = validar_rfc("SAT970701NN3")
     assert result.tipo is not None
     assert result.longitud is not None
     assert result.motivo is None
@@ -359,8 +356,38 @@ def test_rfc_invalido_no_tiene_tipo_ni_longitud() -> None:
 
 def test_rfc_normalizacion_preserva_n_tilde() -> None:
     """ADV-RFC-11c: la Ñ minúscula (ñ) se normaliza a Ñ mayúscula correctamente."""
+    # ÑAÑA010101AAA: dígito verificador correcto = 'A' (verificado)
     rfc_lower = "ñaña010101aaa"  # 13 chars con ñ minúscula
     result = validar_rfc(rfc_lower)
     assert result.rfc == "ÑAÑA010101AAA"
     assert result.valido is True
     assert result.tipo == "fisica"
+
+
+# ---------------------------------------------------------------------------
+# ADV-RFC-12: dígito verificador incorrecto (CA-RFC-08)
+# ---------------------------------------------------------------------------
+
+
+def test_rfc_digito_verificador_incorrecto_moral() -> None:
+    """ADV-RFC-12: RFC moral con dígito verificador incorrecto → rechazado."""
+    # AAA010101AAA: dígito esperado='1', tiene 'A' → incorrecto
+    result = validar_rfc("AAA010101AAA")
+    assert result.valido is False
+    assert result.motivo == "digito_verificador_incorrecto"
+
+
+def test_rfc_digito_verificador_incorrecto_fisica() -> None:
+    """ADV-RFC-12b: RFC física con dígito verificador incorrecto → rechazado."""
+    # AAAA010101AAA: dígito esperado='0', tiene 'A' → incorrecto
+    result = validar_rfc("AAAA010101AAA")
+    assert result.valido is False
+    assert result.motivo == "digito_verificador_incorrecto"
+
+
+def test_rfc_digito_verificador_orden_validaciones() -> None:
+    """ADV-RFC-12c: fecha inválida tiene prioridad sobre dígito verificador incorrecto."""
+    # Fecha '991399' (mes 13) → falla en fecha_invalida antes de llegar al dígito
+    result = validar_rfc("AAA991399AAA")
+    assert result.valido is False
+    assert result.motivo == "fecha_invalida"
