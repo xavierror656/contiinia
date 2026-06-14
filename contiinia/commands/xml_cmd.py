@@ -8,7 +8,6 @@ from typing import Annotated
 import typer
 
 from contiinia.errors import (
-    ArchivoNoEncontradoError,
     BusinessError,
     ContiiniaError,
     ExitCode,
@@ -30,13 +29,6 @@ def cmd_xml(
         raise typer.Exit(0)
     if archivo is None:
         emit_error(ContiiniaError("Se requiere ARCHIVO cuando no se usa --schema", archivo=None))
-
-    # Verificar existencia del archivo antes de parsear
-    if not archivo.exists():
-        emit_error(ArchivoNoEncontradoError(
-            f"Archivo no encontrado: {archivo}",
-            archivo=str(archivo),
-        ))
 
     try:
         result = parsear_xml(archivo)
