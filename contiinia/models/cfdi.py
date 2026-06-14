@@ -9,7 +9,7 @@ class Traslado(BaseModel):
     impuesto: str
     tipo_factor: str
     tasa_o_cuota: Decimal | None = None
-    base: Decimal
+    base: Decimal | None = None
     importe: Decimal | None = None
 
     @field_serializer("tasa_o_cuota", "base", "importe")
@@ -26,6 +26,11 @@ class Retencion(BaseModel):
         return str(v)
 
 
+class ImpuestosConcepto(BaseModel):
+    traslados: list[Traslado] = []
+    retenciones: list[Retencion] = []
+
+
 class Concepto(BaseModel):
     clave_prod_serv: str
     no_identificacion: str | None = None
@@ -37,8 +42,7 @@ class Concepto(BaseModel):
     importe: Decimal
     descuento: Decimal | None = None
     objeto_imp: str | None = None
-    traslados: list[Traslado] = []
-    retenciones: list[Retencion] = []
+    impuestos: ImpuestosConcepto = Field(default_factory=ImpuestosConcepto)
 
     @field_serializer("cantidad", "valor_unitario", "importe", "descuento")
     def serialize_decimal(self, v: Decimal | None) -> str | None:  # noqa: D102
@@ -66,15 +70,30 @@ class ComplementoTimbre(BaseModel):
     fecha_timbrado: str
     rfc_prov_certif: str
     no_certificado_sat: str
+    sello_cfd: str | None = None
+    sello_sat: str | None = None
+
+
+class ImpuestosGlobales(BaseModel):
+    total_impuestos_trasladados: Decimal | None = None
+    total_impuestos_retenidos: Decimal | None = None
+    traslados: list[Traslado] = []
+    retenciones: list[Retencion] = []
+
+    @field_serializer("total_impuestos_trasladados", "total_impuestos_retenidos")
+    def serialize_decimal(self, v: Decimal | None) -> str | None:  # noqa: D102
+        return str(v) if v is not None else None
 
 
 class CfdiXml(BaseModel):
     model_config = {"populate_by_name": True, "serialize_by_alias": True}
 
+    uuid: str
     version: str
     serie: str | None = None
     folio: str | None = None
     fecha: str
+    fecha_timbrado: str | None = None
     sello: str | None = None
     forma_pago: str | None = None
     no_certificado: str
@@ -91,19 +110,16 @@ class CfdiXml(BaseModel):
     emisor: Emisor
     receptor: Receptor
     conceptos: list[Concepto]
-    total_impuestos_trasladados: Decimal | None = None
-    total_impuestos_retenidos: Decimal | None = None
-    traslados_globales: list[Traslado] = []
-    retenciones_globales: list[Retencion] = []
-    timbre: ComplementoTimbre | None = None
+    impuestos: ImpuestosGlobales | None = None
+    complemento_timbre: ComplementoTimbre | None = None
+    complemento_pago_detectado: bool = False
+    advertencias: list[str] = []
 
     @field_serializer(
         "subtotal",
         "descuento",
         "tipo_cambio",
         "total",
-        "total_impuestos_trasladados",
-        "total_impuestos_retenidos",
     )
     def serialize_decimal(self, v: Decimal | None) -> str | None:  # noqa: D102
         return str(v) if v is not None else None

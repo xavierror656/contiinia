@@ -7,7 +7,10 @@ from lxml import etree
 
 from contiinia.errors import (
     ArchivoNoEncontradoError,
+    ArchivoVacioError,
     BusinessError,
+    CampoRequeridoAusenteError,
+    PermisoDenegadoError,
     UnsupportedVersionError,
     XmlMalformadoError,
 )
@@ -16,6 +19,8 @@ from contiinia.models.cfdi import (
     ComplementoTimbre,
     Concepto,
     Emisor,
+    ImpuestosConcepto,
+    ImpuestosGlobales,
     Receptor,
     Retencion,
     Traslado,
@@ -24,6 +29,8 @@ from contiinia.models.cfdi import (
 NS4 = "http://www.sat.gob.mx/cfd/4"
 NS3 = "http://www.sat.gob.mx/cfd/3"
 NS_TFD = "http://www.sat.gob.mx/TimbreFiscalDigital"
+NS_PAGOS20 = "http://www.sat.gob.mx/Pagos20"
+NS_PAGOS = "http://www.sat.gob.mx/Pagos"
 
 
 def _d(value: str | None) -> Decimal | None:
@@ -40,6 +47,15 @@ def parsear_xml(ruta: str | Path) -> CfdiXml:
     """Parsea un CFDI 4.0 XML y retorna CfdiXml. Lanza excepciones tipadas ante errores."""
     ruta = Path(ruta)
 
+    # Detectar archivo vacío antes de parsear
+    try:
+        if ruta.stat().st_size == 0:
+            raise ArchivoVacioError(f"El archivo está vacío: {ruta}", archivo=str(ruta))
+    except FileNotFoundError as exc:
+        raise ArchivoNoEncontradoError(f"Archivo no encontrado: {ruta}", archivo=str(ruta)) from exc
+    except PermissionError as exc:
+        raise PermisoDenegadoError(f"Sin permisos para acceder al archivo: {exc}", archivo=str(ruta)) from exc
+
     try:
         tree = etree.parse(str(ruta))
     except etree.XMLSyntaxError as exc:
@@ -47,7 +63,7 @@ def parsear_xml(ruta: str | Path) -> CfdiXml:
     except FileNotFoundError as exc:
         raise ArchivoNoEncontradoError(f"Archivo no encontrado: {ruta}", archivo=str(ruta)) from exc
     except PermissionError as exc:
-        raise XmlMalformadoError(f"Sin permisos para leer el archivo: {exc}", archivo=str(ruta)) from exc
+        raise PermisoDenegadoError(f"Sin permisos para leer el archivo: {exc}", archivo=str(ruta)) from exc
     except OSError as exc:
         raise XmlMalformadoError(f"No se pudo leer el archivo: {exc}", archivo=str(ruta)) from exc
 
@@ -73,7 +89,7 @@ def parsear_xml(ruta: str | Path) -> CfdiXml:
     def attr(el: etree._Element, name: str, required: bool = False) -> str | None:
         v = el.get(name)
         if required and v is None:
-            raise BusinessError(
+            raise CampoRequeridoAusenteError(
                 f"Atributo requerido faltante: {name}",
                 archivo=str(ruta),
             )
@@ -82,7 +98,7 @@ def parsear_xml(ruta: str | Path) -> CfdiXml:
     # Emisor
     em_el = root.find(tag("Emisor"))
     if em_el is None:
-        raise BusinessError("Nodo Emisor faltante", archivo=str(ruta))
+        raise CampoRequeridoAusenteError("Nodo Emisor faltante", archivo=str(ruta))
     emisor = Emisor(
         rfc=attr(em_el, "Rfc", required=True),
         nombre=attr(em_el, "Nombre"),
@@ -92,7 +108,7 @@ def parsear_xml(ruta: str | Path) -> CfdiXml:
     # Receptor
     rec_el = root.find(tag("Receptor"))
     if rec_el is None:
-        raise BusinessError("Nodo Receptor faltante", archivo=str(ruta))
+        raise CampoRequeridoAusenteError("Nodo Receptor faltante", archivo=str(ruta))
     receptor = Receptor(
         rfc=attr(rec_el, "Rfc", required=True),
         nombre=attr(rec_el, "Nombre"),
@@ -141,22 +157,18 @@ def parsear_xml(ruta: str | Path) -> CfdiXml:
                 importe=_d(attr(c_el, "Importe")),
                 descuento=_d(attr(c_el, "Descuento")),
                 objeto_imp=attr(c_el, "ObjetoImp"),
-                traslados=traslados,
-                retenciones=retenciones,
+                impuestos=ImpuestosConcepto(traslados=traslados, retenciones=retenciones),
             )
         )
 
     # Impuestos globales
     imp_el = root.find(tag("Impuestos"))
-    traslados_globales: list[Traslado] = []
-    retenciones_globales: list[Retencion] = []
-    total_trasladados = None
-    total_retenidos = None
+    impuestos_globales: ImpuestosGlobales | None = None
     if imp_el is not None:
-        total_trasladados = _d(attr(imp_el, "TotalImpuestosTrasladados"))
-        total_retenidos = _d(attr(imp_el, "TotalImpuestosRetenidos"))
+        traslados_g: list[Traslado] = []
+        retenciones_g: list[Retencion] = []
         for t_el in imp_el.findall(f"{tag('Traslados')}/{tag('Traslado')}"):
-            traslados_globales.append(
+            traslados_g.append(
                 Traslado(
                     impuesto=attr(t_el, "Impuesto", required=True),
                     tipo_factor=attr(t_el, "TipoFactor", required=True),
@@ -166,31 +178,60 @@ def parsear_xml(ruta: str | Path) -> CfdiXml:
                 )
             )
         for r_el in imp_el.findall(f"{tag('Retenciones')}/{tag('Retencion')}"):
-            retenciones_globales.append(
+            retenciones_g.append(
                 Retencion(
                     impuesto=attr(r_el, "Impuesto", required=True),
                     importe=_d(attr(r_el, "Importe")),
                 )
             )
+        impuestos_globales = ImpuestosGlobales(
+            total_impuestos_trasladados=_d(attr(imp_el, "TotalImpuestosTrasladados")),
+            total_impuestos_retenidos=_d(attr(imp_el, "TotalImpuestosRetenidos")),
+            traslados=traslados_g,
+            retenciones=retenciones_g,
+        )
 
-    # Timbre Fiscal Digital
-    timbre = None
+    # Timbre Fiscal Digital y Complementos
+    complemento_timbre: ComplementoTimbre | None = None
+    complemento_pago_detectado = False
+    uuid = ""
+    fecha_timbrado = None
+
     comp_el = root.find(tag("Complemento"))
     if comp_el is not None:
         tfd_el = comp_el.find(f"{{{NS_TFD}}}TimbreFiscalDigital")
         if tfd_el is not None:
-            timbre = ComplementoTimbre(
-                uuid=attr(tfd_el, "UUID", required=True).upper(),
-                fecha_timbrado=attr(tfd_el, "FechaTimbrado", required=True),
+            uuid = attr(tfd_el, "UUID", required=True).upper()
+            fecha_timbrado = attr(tfd_el, "FechaTimbrado", required=True)
+            complemento_timbre = ComplementoTimbre(
+                uuid=uuid,
+                fecha_timbrado=fecha_timbrado,
                 rfc_prov_certif=attr(tfd_el, "RfcProvCertif", required=True),
                 no_certificado_sat=attr(tfd_el, "NoCertificadoSAT", required=True),
+                sello_cfd=attr(tfd_el, "SelloCFD"),
+                sello_sat=attr(tfd_el, "SelloSAT"),
             )
 
+        # Detectar complemento de pago (Pagos 2.0 o Pagos)
+        for ns_pagos in (NS_PAGOS20, NS_PAGOS):
+            if comp_el.find(f"{{{ns_pagos}}}Pagos") is not None:
+                complemento_pago_detectado = True
+                break
+
+    # UUID es requerido según spec 3.7
+    if not uuid:
+        raise CampoRequeridoAusenteError(
+            "Complemento/TimbreFiscalDigital/@UUID no encontrado",
+            archivo=str(ruta),
+        )
+
     return CfdiXml(
+        uuid=uuid,
         version=attr(root, "Version", required=True),
         serie=attr(root, "Serie"),
         folio=attr(root, "Folio"),
         fecha=attr(root, "Fecha", required=True),
+        fecha_timbrado=fecha_timbrado,
         sello=attr(root, "Sello"),
         forma_pago=attr(root, "FormaPago"),
         no_certificado=attr(root, "NoCertificado", required=True),
@@ -207,9 +248,8 @@ def parsear_xml(ruta: str | Path) -> CfdiXml:
         emisor=emisor,
         receptor=receptor,
         conceptos=conceptos,
-        total_impuestos_trasladados=total_trasladados,
-        total_impuestos_retenidos=total_retenidos,
-        traslados_globales=traslados_globales,
-        retenciones_globales=retenciones_globales,
-        timbre=timbre,
+        impuestos=impuestos_globales,
+        complemento_timbre=complemento_timbre,
+        complemento_pago_detectado=complemento_pago_detectado,
+        advertencias=[],
     )

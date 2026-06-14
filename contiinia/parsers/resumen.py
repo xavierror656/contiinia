@@ -4,7 +4,7 @@ from collections import defaultdict
 from decimal import Decimal
 from pathlib import Path
 
-from contiinia.errors import ContiiniaError, DirectorioNoEncontradoError
+from contiinia.errors import ContiiniaError, DirectorioNoEncontradoError, RutaNoEsDirectorioError
 from contiinia.models.resumen import (
     ErrorDetalle,
     IvaTrasladadoPorTasa,
@@ -35,9 +35,14 @@ def calcular_resumen(directorio: Path, recursivo: bool = False) -> ResumenLote:
       pagos_ppd_sin_complemento (el CFDI sí existe, pero el cobro es diferido).
     - Archivos con error van a errores_detalle; no abortan el proceso.
     """
-    if not directorio.exists() or not directorio.is_dir():
+    if not directorio.exists():
         raise DirectorioNoEncontradoError(
             f"Directorio no encontrado: {directorio}",
+            archivo=str(directorio),
+        )
+    if not directorio.is_dir():
+        raise RutaNoEsDirectorioError(
+            f"La ruta no es un directorio: {directorio}",
             archivo=str(directorio),
         )
 
@@ -112,29 +117,27 @@ def calcular_resumen(directorio: Path, recursivo: bool = False) -> ResumenLote:
         if cfdi.fecha:
             fechas.append(cfdi.fecha)
 
+        traslados_globales = cfdi.impuestos.traslados if cfdi.impuestos else []
+        retenciones_globales = cfdi.impuestos.retenciones if cfdi.impuestos else []
+
         # --- Contabilización por tipo ---
         if tipo == "I":
             subtotal_i += subtotal
             total_i += total
 
-            # PPD sin complemento de pago (complemento_pago_detectado=False para tipo I con PPD)
-            if cfdi.metodo_pago == "PPD":
-                # Si no hay complemento real de pagos (nodo Pagos), se anota como PPD pendiente.
-                # El campo complemento de pago en parsear_xml se detecta en el nodo Complemento/Pagos
-                # No disponible directamente en CfdiXml; usamos la ausencia de traslados_globales
-                # como heurística conservadora: si tiene MetodoPago=PPD el ingreso es diferido
-                uuid_str = cfdi.timbre.uuid if cfdi.timbre else ruta_str
-                ppd_uuids.append(uuid_str)
+            # PPD sin complemento de pago real
+            if cfdi.metodo_pago == "PPD" and not cfdi.complemento_pago_detectado:
+                ppd_uuids.append(cfdi.uuid or ruta_str)
 
             # IVA trasladado: tipo I suma
-            for t in cfdi.traslados_globales:
+            for t in traslados_globales:
                 if t.impuesto == "002":  # IVA
                     clave = (t.tipo_factor, str(t.tasa_o_cuota) if t.tasa_o_cuota is not None else None)
                     iva_base[clave] += t.base or Decimal("0")
                     iva_importe[clave] += t.importe or Decimal("0")
 
             # Retenciones de tipo I
-            for r in cfdi.retenciones_globales:
+            for r in retenciones_globales:
                 if r.impuesto == "002":
                     total_iva_retenido += r.importe or Decimal("0")
                 elif r.impuesto == "001":
@@ -145,7 +148,7 @@ def calcular_resumen(directorio: Path, recursivo: bool = False) -> ResumenLote:
             total_e += total
 
             # IVA trasladado: tipo E resta
-            for t in cfdi.traslados_globales:
+            for t in traslados_globales:
                 if t.impuesto == "002":
                     clave = (t.tipo_factor, str(t.tasa_o_cuota) if t.tasa_o_cuota is not None else None)
                     iva_base[clave] -= t.base or Decimal("0")

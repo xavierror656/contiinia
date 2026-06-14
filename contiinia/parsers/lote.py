@@ -6,6 +6,7 @@ from contiinia.errors import (
     ContiiniaError,
     DirectorioNoEncontradoError,
     ExitCode,
+    RutaNoEsDirectorioError,
     UnsupportedVersionError,
 )
 from contiinia.models.lote import (
@@ -21,9 +22,14 @@ from contiinia.parsers.xml import parsear_xml
 
 def parsear_lote(directorio: Path, recursivo: bool = False) -> LoteResult:
     """Parsea todos los XML en el directorio. Tolera errores individuales sin abortar."""
-    if not directorio.exists() or not directorio.is_dir():
+    if not directorio.exists():
         raise DirectorioNoEncontradoError(
             f"Directorio no encontrado: {directorio}",
+            archivo=str(directorio),
+        )
+    if not directorio.is_dir():
+        raise RutaNoEsDirectorioError(
+            f"La ruta no es un directorio: {directorio}",
             archivo=str(directorio),
         )
 
@@ -80,9 +86,14 @@ def parsear_lote(directorio: Path, recursivo: bool = False) -> LoteResult:
 
 def detectar_duplicados(directorio: Path, recursivo: bool = False) -> DuplicadosResult:
     """Detecta UUIDs duplicados en un directorio de CFDIs."""
-    if not directorio.exists() or not directorio.is_dir():
+    if not directorio.exists():
         raise DirectorioNoEncontradoError(
             f"Directorio no encontrado: {directorio}",
+            archivo=str(directorio),
+        )
+    if not directorio.is_dir():
+        raise RutaNoEsDirectorioError(
+            f"La ruta no es un directorio: {directorio}",
             archivo=str(directorio),
         )
 
@@ -96,8 +107,8 @@ def detectar_duplicados(directorio: Path, recursivo: bool = False) -> Duplicados
         ruta_str = str(archivo)
         try:
             cfdi = parsear_xml(archivo)
-            if cfdi.timbre:
-                uuid = cfdi.timbre.uuid.upper()
+            if cfdi.uuid:
+                uuid = cfdi.uuid  # already uppercase from parser
                 if uuid not in uuid_map:
                     uuid_map[uuid] = []
                 uuid_map[uuid].append(ruta_str)

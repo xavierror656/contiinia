@@ -1,6 +1,7 @@
 """CLI principal de contiinia — registra subcomandos; sin lógica de negocio."""
 
 import atexit
+import json
 import sys
 
 import typer
@@ -33,7 +34,7 @@ app = typer.Typer(
     help="CLI para procesamiento de CFDI 4.0.",
     pretty_exceptions_show_locals=False,  # Principio 6: nunca tracebacks al usuario
     pretty_exceptions_enable=False,
-    no_args_is_help=True,
+    no_args_is_help=False,
     invoke_without_command=True,
 )
 
@@ -41,10 +42,15 @@ app = typer.Typer(
 @app.callback()
 def _callback(ctx: typer.Context) -> None:
     """contiinia — procesamiento de CFDI 4.0."""
-    # Sin lógica de negocio. Solo garantiza que los subcomandos
-    # sean accesibles como `contiinia <subcomando>`.
     if ctx.invoked_subcommand is None:
-        typer.echo(ctx.get_help())
+        # Constitución Principio 2: toda salida es JSON; nunca texto libre a stdout.
+        payload = {
+            "error": "subcomando_requerido",
+            "archivo": None,
+            "detalle": "Se requiere un subcomando. Comandos disponibles: version, rfc, xml, tabla, lote, duplicados, resumen",
+        }
+        print(json.dumps(payload, ensure_ascii=False), file=sys.stderr, flush=True)
+        raise typer.Exit(1)
 
 
 app.command("version", help="Emite la versión del CLI y el entorno.")(cmd_version)
