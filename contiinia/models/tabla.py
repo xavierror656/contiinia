@@ -9,6 +9,7 @@ from pydantic import BaseModel, field_serializer
 class TablaRow(BaseModel):
     """Una fila normalizada de la tabla de conceptos."""
 
+    fila: int
     clave_prod_serv: str | None = None
     descripcion: str | None = None
     cantidad: Decimal | None = None
@@ -27,9 +28,11 @@ class TablaResult(BaseModel):
     """Resultado del parseo de una tabla de conceptos."""
 
     archivo: str
+    formato: str
     total_registros: int
     columnas_detectadas: list[str]
     registros: list[TablaRow]
+    advertencias: list[str] = []
 
     model_config = {
         "json_schema_extra": {"description": "Resultado de parseo de tabla de conceptos"}

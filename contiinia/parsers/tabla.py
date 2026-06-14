@@ -10,9 +10,18 @@ import pandas as pd
 
 from contiinia.errors import (
     ArchivoNoEncontradoError,
+    ArchivoSinDatosError,
+    ColumnaRequeridaAusenteError,
     FormatoNoSoportadoError,
+    ValorNoNumericoError,
 )
 from contiinia.models.tabla import TablaResult, TablaRow
+
+# ---------------------------------------------------------------------------
+# Columnas requeridas según spec 4.5
+# ---------------------------------------------------------------------------
+
+_COLUMNAS_REQUERIDAS = frozenset({"clave_prod_serv", "descripcion", "cantidad", "valor_unitario", "importe"})
 
 # ---------------------------------------------------------------------------
 # Mapeo alias → columna canónica
@@ -94,18 +103,20 @@ def _detect_csv_separator(ruta: Path) -> str:
     return ";" if semicolons > commas else ","
 
 
-def _load_dataframe(ruta: Path) -> pd.DataFrame:
-    """Carga el DataFrame desde CSV o XLSX según la extensión."""
+def _load_dataframe(ruta: Path) -> tuple[pd.DataFrame, str]:
+    """Carga el DataFrame desde CSV o XLSX según la extensión. Retorna (df, formato)."""
     ext = ruta.suffix.lower()
 
     if ext == ".csv":
         sep = _detect_csv_separator(ruta)
         try:
-            return pd.read_csv(ruta, sep=sep, encoding="utf-8", dtype=str, keep_default_na=False)
+            df = pd.read_csv(ruta, sep=sep, encoding="utf-8", dtype=str, keep_default_na=False)
         except UnicodeDecodeError:
-            return pd.read_csv(ruta, sep=sep, encoding="latin-1", dtype=str, keep_default_na=False)
+            df = pd.read_csv(ruta, sep=sep, encoding="latin-1", dtype=str, keep_default_na=False)
+        return df, "csv"
     elif ext in {".xlsx", ".xls"}:
-        return pd.read_excel(ruta, dtype=str, keep_default_na=False)
+        df = pd.read_excel(ruta, dtype=str, keep_default_na=False)
+        return df, "xlsx"
     else:
         raise FormatoNoSoportadoError(
             f"Extensión '{ext}' no soportada. Use .csv o .xlsx.",
@@ -123,6 +134,9 @@ def parsear_tabla(ruta: Path) -> TablaResult:
     Raises:
         ArchivoNoEncontradoError: si el archivo no existe (exit 3).
         FormatoNoSoportadoError: si la extensión no es .csv/.xlsx (exit 1).
+        ArchivoSinDatosError: si el archivo está vacío o sin filas de datos (exit 1).
+        ColumnaRequeridaAusenteError: si falta una columna requerida (exit 1).
+        ValorNoNumericoError: si un campo monetario tiene valor no numérico (exit 1).
     """
     if not ruta.exists():
         raise ArchivoNoEncontradoError(
@@ -130,19 +144,37 @@ def parsear_tabla(ruta: Path) -> TablaResult:
             archivo=str(ruta),
         )
 
-    df = _load_dataframe(ruta)
+    df, formato = _load_dataframe(ruta)
 
     # Eliminar filas completamente vacías
     df = df.replace("", None)
     df = df.dropna(how="all")
 
+    # Detectar archivo sin datos
+    if len(df) == 0:
+        raise ArchivoSinDatosError(
+            f"El archivo no contiene filas de datos: {ruta}",
+            archivo=str(ruta),
+        )
+
     # Mapear columnas
     col_map, unmapped = _map_columns(df)
     columnas_detectadas = list(col_map.values())
 
+    # Verificar columnas requeridas
+    columnas_encontradas = set(col_map.values())
+    for col_requerida in sorted(_COLUMNAS_REQUERIDAS):
+        if col_requerida not in columnas_encontradas:
+            raise ColumnaRequeridaAusenteError(
+                f"Columna requerida no encontrada: '{col_requerida}'",
+                archivo=str(ruta),
+            )
+
     registros: list[TablaRow] = []
 
-    for _, row in df.iterrows():
+    for idx, row in df.iterrows():
+        fila = int(idx) + 2  # encabezado es fila 1, primer dato es fila 2
+
         # Columnas canónicas
         canonical_vals: dict[str, Any] = {}
         for orig_col, canon in col_map.items():
@@ -159,12 +191,26 @@ def parsear_tabla(ruta: Path) -> TablaResult:
                 val = None
             columnas_extra[col] = val
 
-        # Convertir decimales
-        cantidad = _to_decimal(canonical_vals.get("cantidad"))
-        valor_unitario = _to_decimal(canonical_vals.get("valor_unitario"))
-        importe = _to_decimal(canonical_vals.get("importe"))
+        # Convertir decimales — valor no numérico es error fatal
+        def to_decimal_or_error(field: str, archivo: str) -> Decimal | None:
+            raw = canonical_vals.get(field)
+            if raw is None:
+                return None
+            result = _to_decimal(raw)
+            if result is None:
+                raise ValorNoNumericoError(
+                    f"Valor no numérico en columna '{field}', fila {fila}: {raw!r}",
+                    archivo=archivo,
+                )
+            return result
+
+        archivo_str = str(ruta)
+        cantidad = to_decimal_or_error("cantidad", archivo_str)
+        valor_unitario = to_decimal_or_error("valor_unitario", archivo_str)
+        importe = to_decimal_or_error("importe", archivo_str)
 
         registro = TablaRow(
+            fila=fila,
             clave_prod_serv=canonical_vals.get("clave_prod_serv"),
             descripcion=canonical_vals.get("descripcion"),
             cantidad=cantidad,
@@ -178,6 +224,7 @@ def parsear_tabla(ruta: Path) -> TablaResult:
 
     return TablaResult(
         archivo=str(ruta.resolve()),
+        formato=formato,
         total_registros=len(registros),
         columnas_detectadas=columnas_detectadas,
         registros=registros,
