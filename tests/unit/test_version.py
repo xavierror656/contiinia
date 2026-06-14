@@ -11,9 +11,9 @@ def test_version_info_defaults() -> None:
     """VersionInfo tiene los valores por defecto correctos."""
     info = VersionInfo()
     assert info.cli == "contiinia"
-    assert info.version == "0.1.0"
+    assert info.version == "1.2.0"
     assert info.cfdi_soportados == ["4.0"]
-    assert info.spec_version == "1.0"
+    assert info.spec_version == "1.1"
 
 
 def test_version_info_json_valido() -> None:
@@ -21,7 +21,7 @@ def test_version_info_json_valido() -> None:
     info = VersionInfo()
     data = json.loads(info.model_dump_json())
     assert "version" in data
-    assert data["version"] == "0.1.0"
+    assert data["version"] == "1.2.0"
 
 
 def test_version_info_cfdi_soportados() -> None:

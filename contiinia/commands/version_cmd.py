@@ -5,6 +5,7 @@ from typing import Annotated
 
 import typer
 
+from contiinia.errors import SystemError as ContiiniaSystemError, emit_error
 from contiinia.models.version import VersionInfo
 
 
@@ -16,5 +17,8 @@ def cmd_version(
         print(json.dumps(VersionInfo.model_json_schema(), ensure_ascii=False, indent=2), flush=True)
         raise typer.Exit(0)
 
-    print(VersionInfo().model_dump_json(), flush=True)
+    try:
+        print(VersionInfo().model_dump_json(), flush=True)
+    except Exception as exc:
+        emit_error(ContiiniaSystemError(f"Error inesperado: {exc}", archivo=None))
     raise typer.Exit(0)
