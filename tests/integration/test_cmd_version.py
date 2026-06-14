@@ -31,20 +31,28 @@ def test_version_contiene_campo_version() -> None:
     assert "version" in data
 
 
-def test_version_contiene_campo_python() -> None:
-    """CA-VER-02: la salida JSON contiene el campo 'python'."""
+def test_version_contiene_campo_cli() -> None:
+    """CA-VER-02: la salida JSON contiene el campo 'cli'."""
     result = runner.invoke(app, ["version"])
     assert result.exit_code == 0
     data = json.loads(result.output)
-    assert "python" in data
+    assert data.get("cli") == "contiinia"
 
 
-def test_version_contiene_campo_platform() -> None:
-    """CA-VER-02: la salida JSON contiene el campo 'platform'."""
+def test_version_contiene_cfdi_soportados() -> None:
+    """CA-VER-02: la salida JSON contiene 'cfdi_soportados' con ['4.0']."""
     result = runner.invoke(app, ["version"])
     assert result.exit_code == 0
     data = json.loads(result.output)
-    assert "platform" in data
+    assert data.get("cfdi_soportados") == ["4.0"]
+
+
+def test_version_contiene_spec_version() -> None:
+    """CA-VER-02: la salida JSON contiene 'spec_version'."""
+    result = runner.invoke(app, ["version"])
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert "spec_version" in data
 
 
 def test_version_semver() -> None:

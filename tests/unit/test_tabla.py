@@ -26,7 +26,7 @@ def fx(nombre: str) -> Path:
 def test_csv_basico_filas() -> None:
     """CA-TAB-01: CSV con columnas canónicas → 2 filas."""
     result = parsear_tabla(fx("tabla_conceptos.csv"))
-    assert result.filas == 2
+    assert result.total_registros == 2
 
 
 def test_csv_basico_columnas_detectadas() -> None:
@@ -55,7 +55,7 @@ def test_csv_basico_registro_descripcion() -> None:
 def test_xlsx_basico_filas() -> None:
     """CA-TAB-03: XLSX válido → mismo número de filas que CSV."""
     result = parsear_tabla(fx("tabla_conceptos.xlsx"))
-    assert result.filas == 2
+    assert result.total_registros == 2
 
 
 def test_xlsx_basico_columnas_detectadas() -> None:
@@ -180,7 +180,7 @@ def test_columnas_extra_en_extras() -> None:
     result = parsear_tabla(tmp)
     tmp.unlink()
 
-    assert result.registros[0].extras.get("referencia") == "REF-001"
+    assert result.registros[0].columnas_extra.get("referencia") == "REF-001"
 
 
 # ---------------------------------------------------------------------------
@@ -198,7 +198,7 @@ def test_csv_semicolon_detectado() -> None:
     result = parsear_tabla(tmp)
     tmp.unlink()
 
-    assert result.filas == 1
+    assert result.total_registros == 1
     assert result.registros[0].clave_prod_serv == "84111506"
 
 
@@ -247,4 +247,4 @@ def test_filas_vacias_omitidas() -> None:
     result = parsear_tabla(tmp)
     tmp.unlink()
 
-    assert result.filas == 2
+    assert result.total_registros == 2

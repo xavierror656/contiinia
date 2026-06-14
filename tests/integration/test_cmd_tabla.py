@@ -40,7 +40,7 @@ def test_cmd_csv_total_registros() -> None:
     """CA-TAB-01: CSV tiene 2 registros."""
     result = runner.invoke(app, ["tabla", fx("tabla_conceptos.csv")])
     data = json.loads(result.output)
-    assert data["filas"] == 2
+    assert data['total_registros'] == 2
     assert len(data["registros"]) == 2
 
 
@@ -74,7 +74,7 @@ def test_cmd_xlsx_total_registros() -> None:
     """CA-TAB-03: XLSX tiene 2 registros."""
     result = runner.invoke(app, ["tabla", fx("tabla_conceptos.xlsx")])
     data = json.loads(result.output)
-    assert data["filas"] == 2
+    assert data['total_registros'] == 2
 
 
 # ---------------------------------------------------------------------------

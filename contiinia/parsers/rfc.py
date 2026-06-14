@@ -55,23 +55,28 @@ def _fecha_valida(digits: str) -> bool:
 
 
 def _fecha_futura(digits: str) -> bool:
-    """Devuelve True si la fecha del RFC es posterior a hoy (en cualquier siglo)."""
+    """Devuelve True solo si AMBOS siglos posibles producen una fecha futura.
+
+    Si alguno de los dos siglos produce una fecha pasada/presente válida, el
+    RFC se acepta (beneficio de la duda: un RFC de 1980 tiene aa=80, que en
+    el siglo XXI sería 2080, pero en el siglo XX es 1980 — válido).
+    """
     aa = int(digits[0:2])
     mm = int(digits[2:4])
     dd = int(digits[4:6])
     hoy = date.today()
 
-    # Intentar construir la fecha prefiriendo el siglo más reciente que dé una fecha válida
+    fechas_validas: list[date] = []
     for century in (2000, 1900):
-        year = century + aa
         try:
-            fecha = date(year, mm, dd)
-            if fecha > hoy:
-                return True
-            return False
+            fechas_validas.append(date(century + aa, mm, dd))
         except ValueError:
             continue
-    return False
+
+    if not fechas_validas:
+        return False
+    # Solo futura si TODAS las fechas válidas son futuras
+    return all(f > hoy for f in fechas_validas)
 
 
 def validar_rfc(rfc: str) -> RfcValidation:

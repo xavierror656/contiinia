@@ -21,7 +21,7 @@ def fx(nombre: str) -> Path:
 
 
 def test_ingreso_valido_tipo_I() -> None:
-    """CA-XML-01: CFDI tipo I → exit 0, tipo_de_comprobante='I'."""
+    """CA-XML-01: CFDI tipo I → exit 0, tipo_comprobante='I'."""
     result = parsear_xml(fx("cfdi_ingreso.xml"))
     assert result.tipo_de_comprobante == "I"
 
@@ -79,7 +79,7 @@ def test_ingreso_conceptos() -> None:
 
 
 def test_egreso_tipo_E() -> None:
-    """CA-XML-02: CFDI tipo E → tipo_de_comprobante='E'."""
+    """CA-XML-02: CFDI tipo E → tipo_comprobante='E'."""
     result = parsear_xml(fx("cfdi_egreso.xml"))
     assert result.tipo_de_comprobante == "E"
 
@@ -96,7 +96,7 @@ def test_egreso_total() -> None:
 
 
 def test_pago_tipo_P() -> None:
-    """CA-XML-03: CFDI tipo P → tipo_de_comprobante='P'."""
+    """CA-XML-03: CFDI tipo P → tipo_comprobante='P'."""
     result = parsear_xml(fx("cfdi_pago.xml"))
     assert result.tipo_de_comprobante == "P"
 
@@ -107,7 +107,7 @@ def test_pago_tipo_P() -> None:
 
 
 def test_nomina_tipo_N() -> None:
-    """CA-XML-04: CFDI tipo N → tipo_de_comprobante='N'."""
+    """CA-XML-04: CFDI tipo N → tipo_comprobante='N'."""
     result = parsear_xml(fx("cfdi_nomina.xml"))
     assert result.tipo_de_comprobante == "N"
 
@@ -118,7 +118,7 @@ def test_nomina_tipo_N() -> None:
 
 
 def test_traslado_tipo_T() -> None:
-    """CA-XML-05: CFDI tipo T → tipo_de_comprobante='T'."""
+    """CA-XML-05: CFDI tipo T → tipo_comprobante='T'."""
     result = parsear_xml(fx("cfdi_traslado.xml"))
     assert result.tipo_de_comprobante == "T"
 

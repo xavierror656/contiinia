@@ -6,6 +6,7 @@ from pathlib import Path
 from lxml import etree
 
 from contiinia.errors import (
+    ArchivoNoEncontradoError,
     BusinessError,
     UnsupportedVersionError,
     XmlMalformadoError,
@@ -43,8 +44,11 @@ def parsear_xml(ruta: str | Path) -> CfdiXml:
         tree = etree.parse(str(ruta))
     except etree.XMLSyntaxError as exc:
         raise XmlMalformadoError(f"XML malformado: {exc}", archivo=str(ruta)) from exc
+    except FileNotFoundError as exc:
+        raise ArchivoNoEncontradoError(f"Archivo no encontrado: {ruta}", archivo=str(ruta)) from exc
+    except PermissionError as exc:
+        raise XmlMalformadoError(f"Sin permisos para leer el archivo: {exc}", archivo=str(ruta)) from exc
     except OSError as exc:
-        # archivo no encontrado u otro error de I/O ya capturado en el comando
         raise XmlMalformadoError(f"No se pudo leer el archivo: {exc}", archivo=str(ruta)) from exc
 
     root = tree.getroot()

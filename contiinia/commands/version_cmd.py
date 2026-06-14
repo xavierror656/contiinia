@@ -1,8 +1,6 @@
 """Comando `contiinia version` — emite VersionInfo como JSON a stdout."""
 
 import json
-import platform
-import sys
 from typing import Annotated
 
 import typer
@@ -18,10 +16,5 @@ def cmd_version(
         print(json.dumps(VersionInfo.model_json_schema(), ensure_ascii=False, indent=2), flush=True)
         raise typer.Exit(0)
 
-    info = {
-        "version": VersionInfo().version,
-        "python": sys.version.split()[0],
-        "platform": platform.system().lower(),
-    }
-    print(json.dumps(info, ensure_ascii=False), flush=True)
+    print(VersionInfo().model_dump_json(), flush=True)
     raise typer.Exit(0)

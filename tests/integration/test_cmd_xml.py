@@ -29,10 +29,10 @@ def test_cmd_ingreso_exit_0() -> None:
 
 
 def test_cmd_ingreso_tipo_I() -> None:
-    """CA-XML-01: tipo_de_comprobante='I'."""
+    """CA-XML-01: tipo_comprobante='I'."""
     result = runner.invoke(app, ["xml", fx("cfdi_ingreso.xml")])
     data = json.loads(result.output)
-    assert data["tipo_de_comprobante"] == "I"
+    assert data['tipo_comprobante'] == "I"
 
 
 def test_cmd_ingreso_total_string() -> None:
@@ -66,11 +66,11 @@ def test_cmd_ingreso_iva_16_traslado_global() -> None:
 
 
 def test_cmd_egreso_tipo_E() -> None:
-    """CA-XML-02: cfdi_egreso.xml → tipo_de_comprobante='E', exit 0."""
+    """CA-XML-02: cfdi_egreso.xml → tipo_comprobante='E', exit 0."""
     result = runner.invoke(app, ["xml", fx("cfdi_egreso.xml")])
     assert result.exit_code == 0
     data = json.loads(result.output)
-    assert data["tipo_de_comprobante"] == "E"
+    assert data['tipo_comprobante'] == "E"
 
 
 # ---------------------------------------------------------------------------
@@ -79,11 +79,11 @@ def test_cmd_egreso_tipo_E() -> None:
 
 
 def test_cmd_pago_tipo_P() -> None:
-    """CA-XML-03: cfdi_pago.xml → tipo_de_comprobante='P', exit 0."""
+    """CA-XML-03: cfdi_pago.xml → tipo_comprobante='P', exit 0."""
     result = runner.invoke(app, ["xml", fx("cfdi_pago.xml")])
     assert result.exit_code == 0
     data = json.loads(result.output)
-    assert data["tipo_de_comprobante"] == "P"
+    assert data['tipo_comprobante'] == "P"
 
 
 # ---------------------------------------------------------------------------
@@ -92,11 +92,11 @@ def test_cmd_pago_tipo_P() -> None:
 
 
 def test_cmd_nomina_tipo_N() -> None:
-    """CA-XML-04: cfdi_nomina.xml → tipo_de_comprobante='N', exit 0."""
+    """CA-XML-04: cfdi_nomina.xml → tipo_comprobante='N', exit 0."""
     result = runner.invoke(app, ["xml", fx("cfdi_nomina.xml")])
     assert result.exit_code == 0
     data = json.loads(result.output)
-    assert data["tipo_de_comprobante"] == "N"
+    assert data['tipo_comprobante'] == "N"
 
 
 # ---------------------------------------------------------------------------
@@ -105,11 +105,11 @@ def test_cmd_nomina_tipo_N() -> None:
 
 
 def test_cmd_traslado_tipo_T() -> None:
-    """CA-XML-05: cfdi_traslado.xml → tipo_de_comprobante='T', exit 0."""
+    """CA-XML-05: cfdi_traslado.xml → tipo_comprobante='T', exit 0."""
     result = runner.invoke(app, ["xml", fx("cfdi_traslado.xml")])
     assert result.exit_code == 0
     data = json.loads(result.output)
-    assert data["tipo_de_comprobante"] == "T"
+    assert data['tipo_comprobante'] == "T"
 
 
 # ---------------------------------------------------------------------------
@@ -266,4 +266,4 @@ def test_cmd_salida_exitosa_es_json() -> None:
     result = runner.invoke(app, ["xml", fx("cfdi_ingreso.xml")])
     data = json.loads(result.output)
     assert isinstance(data, dict)
-    assert "tipo_de_comprobante" in data
+    assert "tipo_comprobante" in data

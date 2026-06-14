@@ -29,8 +29,7 @@ def cmd_xml(
         print(json.dumps(CfdiXml.model_json_schema(), indent=2), flush=True)
         raise typer.Exit(0)
     if archivo is None:
-        typer.echo("Error: Falta el argumento 'ARCHIVO'.", err=True)
-        raise typer.Exit(1)
+        emit_error(ContiiniaError("Se requiere ARCHIVO cuando no se usa --schema", archivo=None))
 
     # Verificar existencia del archivo antes de parsear
     if not archivo.exists():

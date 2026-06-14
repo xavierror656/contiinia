@@ -16,7 +16,7 @@ class TablaRow(BaseModel):
     importe: Decimal | None = None
     impuesto: str | None = None
     tasa: str | None = None
-    extras: dict[str, Any] = {}
+    columnas_extra: dict[str, Any] = {}
 
     @field_serializer("cantidad", "valor_unitario", "importe")
     def serialize_decimal(self, v: Decimal | None) -> str | None:
@@ -27,7 +27,7 @@ class TablaResult(BaseModel):
     """Resultado del parseo de una tabla de conceptos."""
 
     archivo: str
-    filas: int
+    total_registros: int
     columnas_detectadas: list[str]
     registros: list[TablaRow]
 

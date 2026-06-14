@@ -180,12 +180,12 @@ def test_rfc_fecha_febrero_invalida() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_rfc_fecha_futura() -> None:
-    """RFC con fecha futura → fecha_futura."""
-    # Año 2099, mes 12, día 31 — siempre futuro
+def test_rfc_siglo_ambiguo_aceptado() -> None:
+    """RFC con año ambiguo (99) → válido porque 1999-12-31 es fecha pasada válida."""
+    # aa=99 podría ser 2099 (futuro) o 1999 (pasado).
+    # Se acepta porque al menos un siglo produce fecha pasada válida.
     result = validar_rfc("AAA991231AAA")
-    assert result.valido is False
-    assert result.motivo == "fecha_futura"
+    assert result.valido is True
 
 
 # ---------------------------------------------------------------------------

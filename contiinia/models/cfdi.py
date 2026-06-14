@@ -2,7 +2,7 @@
 
 from decimal import Decimal
 
-from pydantic import BaseModel, field_serializer
+from pydantic import BaseModel, Field, field_serializer
 
 
 class Traslado(BaseModel):
@@ -69,6 +69,8 @@ class ComplementoTimbre(BaseModel):
 
 
 class CfdiXml(BaseModel):
+    model_config = {"populate_by_name": True, "serialize_by_alias": True}
+
     version: str
     serie: str | None = None
     folio: str | None = None
@@ -82,7 +84,7 @@ class CfdiXml(BaseModel):
     moneda: str
     tipo_cambio: Decimal | None = None
     total: Decimal
-    tipo_de_comprobante: str
+    tipo_de_comprobante: str = Field(alias="tipo_comprobante")
     exportacion: str | None = None
     metodo_pago: str | None = None
     lugar_expedicion: str

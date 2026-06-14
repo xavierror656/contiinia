@@ -42,9 +42,17 @@ for _canon, _alias_list in _ALIASES.items():
         _ALIAS_MAP[_alias.lower()] = _canon
 
 
+def _is_blank(value: Any) -> bool:
+    """Detecta celdas vacías/NaN sin usar float como tipo de dato."""
+    if value is None:
+        return True
+    s = str(value).strip()
+    return s == "" or s.lower() in ("nan", "none", "null")
+
+
 def _to_decimal(value: Any) -> Decimal | None:
     """Convierte un valor a Decimal; retorna None si no es posible."""
-    if value is None or (isinstance(value, float) and pd.isna(value)):
+    if _is_blank(value):
         return None
     try:
         return Decimal(str(value).strip())
@@ -139,17 +147,17 @@ def parsear_tabla(ruta: Path) -> TablaResult:
         canonical_vals: dict[str, Any] = {}
         for orig_col, canon in col_map.items():
             val = row.get(orig_col)
-            if val == "" or (isinstance(val, float) and pd.isna(val)):
+            if _is_blank(val):
                 val = None
             canonical_vals[canon] = val
 
         # Extras
-        extras: dict[str, Any] = {}
+        columnas_extra: dict[str, Any] = {}
         for col in unmapped:
             val = row.get(col)
-            if val == "" or (isinstance(val, float) and pd.isna(val)):
+            if _is_blank(val):
                 val = None
-            extras[col] = val
+            columnas_extra[col] = val
 
         # Convertir decimales
         cantidad = _to_decimal(canonical_vals.get("cantidad"))
@@ -164,13 +172,13 @@ def parsear_tabla(ruta: Path) -> TablaResult:
             importe=importe,
             impuesto=canonical_vals.get("impuesto"),
             tasa=canonical_vals.get("tasa"),
-            extras=extras,
+            columnas_extra=columnas_extra,
         )
         registros.append(registro)
 
     return TablaResult(
         archivo=str(ruta.resolve()),
-        filas=len(registros),
+        total_registros=len(registros),
         columnas_detectadas=columnas_detectadas,
         registros=registros,
     )
