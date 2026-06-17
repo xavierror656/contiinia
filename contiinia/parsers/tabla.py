@@ -83,6 +83,20 @@ _ALIASES: dict[str, list[str]] = {
         "% iva", "%iva",                       # CONTPAQi con símbolo de porcentaje
         "tasaocuota",                          # CFDI XML camelCase
     ],
+    # B1 — campos de factura completa
+    "descuento": ["descuento", "dto", "discount"],  # "desc" omitido: ya alias de descripcion
+    "clave_unidad": [
+        "clave_unidad", "claveunidad", "unidad", "clave_unidad_sat",
+        "u_medida", "unidad_medida",
+    ],
+    "no_identificacion": [
+        "no_identificacion", "noidentificacion", "no. identificación",
+        "no. identificacion", "sku", "num_parte", "codigo_interno",
+    ],
+    # B2 — campos de nómina
+    "tipo_nomina": ["tipo", "tipo_concepto", "tipo_nomina", "tipo_percepcion"],
+    "gravado": ["gravado", "importe_gravado", "grav"],
+    "exento": ["exento", "importe_exento", "exen"],
 }
 
 # Construir diccionario inverso alias → canónico (en minúsculas + strip)
@@ -408,6 +422,28 @@ def parsear_tabla(ruta: Path) -> TablaResult:
         )
         importe = _to_decimal_or_error(canonical_vals, "importe", fila_idx, archivo_str)
 
+        # B1 — campos opcionales de factura
+        descuento = (
+            _to_decimal_or_error(canonical_vals, "descuento", fila_idx, archivo_str)
+            if "descuento" in col_map.values()
+            else None
+        )
+        clave_unidad = canonical_vals.get("clave_unidad")
+        no_identificacion = canonical_vals.get("no_identificacion")
+
+        # B2 — campos opcionales de nómina
+        tipo_nomina = canonical_vals.get("tipo_nomina")
+        gravado = (
+            _to_decimal_or_error(canonical_vals, "gravado", fila_idx, archivo_str)
+            if "gravado" in col_map.values()
+            else None
+        )
+        exento = (
+            _to_decimal_or_error(canonical_vals, "exento", fila_idx, archivo_str)
+            if "exento" in col_map.values()
+            else None
+        )
+
         # Feature 3: IVA estimado por fila
         tasa_raw = canonical_vals.get("tasa") if tasa_presente else None
         iva_estimado: Decimal | None = None
@@ -430,6 +466,14 @@ def parsear_tabla(ruta: Path) -> TablaResult:
             cantidad=cantidad,
             valor_unitario=valor_unitario,
             importe=importe,
+            # B1
+            descuento=descuento,
+            clave_unidad=clave_unidad,
+            no_identificacion=no_identificacion,
+            # B2
+            tipo_nomina=tipo_nomina,
+            gravado=gravado,
+            exento=exento,
             tasa=tasa_raw if tasa_presente else None,
             iva_estimado=iva_estimado,
             columnas_extra=columnas_extra,

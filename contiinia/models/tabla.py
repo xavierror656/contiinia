@@ -39,12 +39,24 @@ class TablaRow(BaseModel):
     cantidad: Decimal | None = None
     valor_unitario: Decimal | None = None
     importe: Decimal | None = None
+    # B1 — campos de factura completa (opcionales)
+    descuento: Decimal | None = None
+    clave_unidad: str | None = None
+    no_identificacion: str | None = None
+    # B2 — campos de nómina (opcionales)
+    tipo_nomina: str | None = None
+    gravado: Decimal | None = None
+    exento: Decimal | None = None
     tasa: str | None = None
     iva_estimado: Decimal | None = None
     columnas_extra: dict[str, Any] = {}
 
     @field_serializer("cantidad", "valor_unitario", "importe")
     def serialize_decimal(self, v: Decimal | None) -> str | None:
+        return str(v) if v is not None else None
+
+    @field_serializer("descuento", "gravado", "exento")
+    def serialize_decimal_opt(self, v: Decimal | None) -> str | None:
         return str(v) if v is not None else None
 
     @field_serializer("iva_estimado")
