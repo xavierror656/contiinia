@@ -1,18 +1,18 @@
 """Comando `contiinia tabla` — parsea CSV/XLSX de conceptos y emite JSON."""
 
 import json
-import sys
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
 from contiinia.errors import (
-    ArchivoNoEncontradoError,
     BusinessError,
     ContiiniaError,
-    SystemError as ContiiniaSystemError,
     emit_error,
+)
+from contiinia.errors import (
+    SystemError as ContiiniaSystemError,
 )
 from contiinia.models.tabla import TablaResult
 from contiinia.parsers.tabla import parsear_tabla
@@ -31,7 +31,11 @@ def cmd_tabla(
 
     try:
         result = parsear_tabla(archivo)
-        print(result.model_dump_json(exclude_none=True), flush=True)
+        _data = json.loads(result.model_dump_json(exclude_none=True))
+        for _i, _row in enumerate(result.registros):
+            if _row._tasa_col_presente and "iva_estimado" not in _data["registros"][_i]:
+                _data["registros"][_i]["iva_estimado"] = None
+        print(json.dumps(_data), flush=True)
     except BusinessError as exc:
         emit_error(exc)
     except ContiiniaSystemError as exc:

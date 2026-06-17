@@ -5,7 +5,6 @@ import tempfile
 from decimal import Decimal
 from pathlib import Path
 
-import pandas as pd
 import pytest
 
 from contiinia.errors import ArchivoNoEncontradoError, FormatoNoSoportadoError

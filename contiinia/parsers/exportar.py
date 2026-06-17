@@ -11,6 +11,7 @@ from contiinia.errors import (
     DirectorioNoEncontradoError,
     ErrorEscrituraError,
     FormatoNoSoportadoError,
+    PermisoDenegadoError,
     RutaNoEsDirectorioError,
 )
 from contiinia.models.exportar import ExportarPeriodo, ExportarResult
@@ -50,7 +51,13 @@ def generar_exportar(directorio: Path, salida: Path, recursivo: bool = False) ->
         )
 
     pattern = "**/*.xml" if recursivo else "*.xml"
-    archivos = sorted(directorio.glob(pattern))
+    try:
+        archivos = sorted(directorio.glob(pattern))
+    except PermissionError as exc:
+        raise PermisoDenegadoError(
+            f"Sin permiso para leer el directorio: {exc}",
+            archivo=str(directorio),
+        ) from exc
 
     cfdi_exitosos = []
     errores_lista: list[dict[str, str]] = []
@@ -78,7 +85,7 @@ def generar_exportar(directorio: Path, salida: Path, recursivo: bool = False) ->
     subtotal_e = Decimal("0")
     total_i = Decimal("0")
     total_e = Decimal("0")
-    iva_importe: dict[str, Decimal] = defaultdict(Decimal)
+    iva_importe: dict[tuple[str, str], Decimal] = defaultdict(Decimal)
     total_iva_retenido = Decimal("0")
     total_isr_retenido = Decimal("0")
     conteo_tipo: dict[str, int] = defaultdict(int)
@@ -116,7 +123,7 @@ def generar_exportar(directorio: Path, salida: Path, recursivo: bool = False) ->
             total_i += total_orig * tc_factor
             for t in traslados_g:
                 if t.impuesto == "002":
-                    clave = t.tipo_factor or "Tasa"
+                    clave = (t.tipo_factor or "Tasa", str(t.tasa_o_cuota or ""))
                     iva_importe[clave] += (t.importe or Decimal("0")) * tc_factor
             for r in retenciones_g:
                 if r.impuesto == "002":
@@ -128,12 +135,12 @@ def generar_exportar(directorio: Path, salida: Path, recursivo: bool = False) ->
             total_e += total_orig * tc_factor
             for t in traslados_g:
                 if t.impuesto == "002":
-                    clave = t.tipo_factor or "Tasa"
+                    clave = (t.tipo_factor or "Tasa", str(t.tasa_o_cuota or ""))
                     iva_importe[clave] -= (t.importe or Decimal("0")) * tc_factor
 
     total_neto = total_i - total_e
     total_iva_trasladado = sum(
-        v for k, v in iva_importe.items() if k != "Exento"
+        v for k, v in iva_importe.items() if k[0] != "Exento"
     ) or Decimal("0")
     monedas_lista = sorted(monedas_set, key=lambda m: (0 if m == "MXN" else 1, m))
     fecha_min = min(fechas) if fechas else None

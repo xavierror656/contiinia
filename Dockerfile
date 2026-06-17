@@ -1,11 +1,14 @@
 # syntax=docker/dockerfile:1
 # Stage 1: builder — instala deps y genera binario con PyInstaller
-FROM python:3.11-slim AS builder
+FROM python:3.11-slim-bookworm AS builder
 
 WORKDIR /build
 
 # binutils es requerido por PyInstaller en Linux (objdump)
-RUN apt-get update && apt-get install -y --no-install-recommends binutils && rm -rf /var/lib/apt/lists/*
+# upx-ucl no está en bookworm; se descarga el binario oficial de UPX v5.2.0
+RUN apt-get update && apt-get install -y --no-install-recommends binutils curl xz-utils && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL https://github.com/upx/upx/releases/download/v5.2.0/upx-5.2.0-amd64_linux.tar.xz \
+       | tar -xJ --strip-components=1 -C /usr/local/bin/ upx-5.2.0-amd64_linux/upx
 
 # Instala uv
 RUN pip install --no-cache-dir uv==0.4.29
@@ -31,20 +34,23 @@ RUN uv run pyinstaller \
     --noconfirm \
     --hidden-import lxml.etree \
     --hidden-import lxml._elementpath \
-    --hidden-import pandas \
     --hidden-import openpyxl \
-    --hidden-import pdfplumber \
+    --hidden-import xlrd \
     --hidden-import typer \
     --hidden-import pydantic \
     --collect-all typer \
     --collect-all pydantic \
     contiinia/cli.py
 
+# Comprime el ejecutable principal con UPX (~50% tamaño, +300ms startup)
+RUN upx --best dist/contiinia/contiinia
+
 # Verifica que el binario funciona dentro del builder
 RUN ./dist/contiinia/contiinia version
 
 # Stage 2: runtime — imagen mínima con solo el binario y fixtures
-FROM python:3.11-slim AS runtime
+# debian:bookworm-slim en lugar de python:3.11-slim porque PyInstaller ya incluye Python
+FROM debian:bookworm-slim AS runtime
 
 WORKDIR /app
 

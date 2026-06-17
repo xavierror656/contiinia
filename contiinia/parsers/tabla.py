@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import csv
+import io
+import zipfile
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
-import pandas as pd
+import xlrd
+from lxml.etree import fromstring as etree_fromstring
+from openpyxl import load_workbook
 
 from contiinia.errors import (
+    ArchivoCorrumpidoError,
     ArchivoNoEncontradoError,
     ArchivoSinDatosError,
     ColumnaRequeridaAusenteError,
@@ -17,16 +23,27 @@ from contiinia.errors import (
 )
 from contiinia.models.tabla import (
     AdvertenciaImporteInconsistente,
+    AdvertenciaTabla,
     AdvertenciaTasaNoNumerica,
     TablaResult,
     TablaRow,
 )
 
 # ---------------------------------------------------------------------------
+# Constantes de namespace ODS
+# ---------------------------------------------------------------------------
+
+_NS_TABLE = "urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+_NS_TEXT = "urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+_NS_OFFICE = "urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+
+# ---------------------------------------------------------------------------
 # Columnas requeridas según spec 4.5
 # ---------------------------------------------------------------------------
 
-_COLUMNAS_REQUERIDAS = frozenset({"clave_prod_serv", "descripcion", "cantidad", "valor_unitario", "importe"})
+_COLUMNAS_REQUERIDAS = frozenset(
+    {"clave_prod_serv", "descripcion", "cantidad", "valor_unitario", "importe"}
+)
 
 # ---------------------------------------------------------------------------
 # Mapeo alias → columna canónica
@@ -46,7 +63,6 @@ _ALIASES: dict[str, list[str]] = {
         "total_concepto",  # se incluye por robustez
     ],
     "importe": ["importe", "total", "monto", "subtotal", "total_concepto"],
-    "impuesto": ["impuesto", "iva", "imptos"],
     "tasa": ["tasa", "tasa_iva", "porcentaje"],
 }
 
@@ -93,7 +109,7 @@ def _to_decimal_or_error(
     return result
 
 
-def _map_columns(df: pd.DataFrame) -> tuple[dict[str, str], list[str]]:
+def _map_columns(column_names: list[str]) -> tuple[dict[str, str], list[str]]:
     """
     Retorna:
       - col_map: {columna_original → nombre_canónico}  solo para columnas mapeadas
@@ -103,7 +119,7 @@ def _map_columns(df: pd.DataFrame) -> tuple[dict[str, str], list[str]]:
     unmapped: list[str] = []
     seen_canonicals: set[str] = set()
 
-    for col in df.columns:
+    for col in column_names:
         normalized = col.strip().lower()
         canonical = _ALIAS_MAP.get(normalized)
         if canonical and canonical not in seen_canonicals:
@@ -127,54 +143,171 @@ def _detect_csv_separator(ruta: Path) -> str:
     return ";" if semicolons > commas else ","
 
 
-def _load_dataframe(ruta: Path) -> tuple[pd.DataFrame, str, list[str | dict[str, Any]]]:
-    """Carga el DataFrame desde CSV, XLSX, XLS u ODS. Retorna (df, formato, advertencias).
+def _load_csv(ruta: Path) -> tuple[list[dict[str, str]], list[AdvertenciaTabla]]:
+    """Carga CSV como lista de dicts. Retorna (filas, advertencias)."""
+    sep = _detect_csv_separator(ruta)
+    try:
+        text = ruta.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        text = ruta.read_text(encoding="latin-1")
 
-    QA-TAB-01: para formatos multi-hoja procesa siempre la primera hoja y emite advertencia.
+    reader = csv.DictReader(io.StringIO(text), delimiter=sep)
+    filas: list[dict[str, str]] = []
+    for row in reader:
+        if any(v and v.strip() for v in row.values()):
+            filas.append({k: (v.strip() if v else "") for k, v in row.items()})
+    return filas, []
+
+
+def _load_xlsx(ruta: Path) -> tuple[list[dict[str, str]], str, list[AdvertenciaTabla]]:
+    """Carga XLSX como lista de dicts. Retorna (filas, formato, advertencias)."""
+    advertencias: list[AdvertenciaTabla] = []
+    try:
+        wb = load_workbook(str(ruta), read_only=True, data_only=True)
+    except Exception as exc:
+        raise ArchivoCorrumpidoError(
+            f"XLSX inválido o corrupto: {exc}", archivo=str(ruta)
+        ) from exc
+    sheet_names = wb.sheetnames
+    if len(sheet_names) > 1:
+        advertencias.append(
+            f"El archivo contiene {len(sheet_names)} hojas "
+            f"({', '.join(str(s) for s in sheet_names)}); "
+            f"se procesó únicamente la primera hoja: '{sheet_names[0]}'."
+        )
+    ws = wb[sheet_names[0]]
+    rows_iter = ws.iter_rows(values_only=True)
+    header_row = next(rows_iter, None)
+    if header_row is None:
+        wb.close()
+        return [], "xlsx", advertencias
+    headers = [str(h).strip() if h is not None else f"col_{i}" for i, h in enumerate(header_row)]
+    filas: list[dict[str, str]] = []
+    for row in rows_iter:
+        vals = [str(v).strip() if v is not None else "" for v in row]
+        if any(v for v in vals):
+            filas.append(dict(zip(headers, vals, strict=False)))
+    wb.close()
+    return filas, "xlsx", advertencias
+
+
+def _load_xls(ruta: Path) -> tuple[list[dict[str, str]], str, list[AdvertenciaTabla]]:
+    """Carga XLS (formato antiguo) como lista de dicts. Retorna (filas, formato, advertencias)."""
+    advertencias: list[AdvertenciaTabla] = []
+    try:
+        wb = xlrd.open_workbook(str(ruta))
+    except Exception as exc:
+        raise ArchivoCorrumpidoError(
+            f"XLS inválido o corrupto: {exc}", archivo=str(ruta)
+        ) from exc
+    sheet_names = wb.sheet_names()
+    if len(sheet_names) > 1:
+        advertencias.append(
+            f"El archivo contiene {len(sheet_names)} hojas "
+            f"({', '.join(str(s) for s in sheet_names)}); "
+            f"se procesó únicamente la primera hoja: '{sheet_names[0]}'."
+        )
+    ws = wb.sheet_by_index(0)
+    if ws.nrows == 0:
+        return [], "xls", advertencias
+    headers = [str(ws.cell_value(0, c)).strip() for c in range(ws.ncols)]
+    filas: list[dict[str, str]] = []
+    for r in range(1, ws.nrows):
+        vals: list[str] = []
+        for c in range(ws.ncols):
+            cell = ws.cell(r, c)
+            if cell.ctype == xlrd.XL_CELL_NUMBER:
+                val = str(int(cell.value)) if cell.value == int(cell.value) else str(cell.value)
+            elif cell.ctype == xlrd.XL_CELL_EMPTY:
+                val = ""
+            else:
+                val = str(cell.value).strip()
+            vals.append(val)
+        if any(v for v in vals):
+            filas.append(dict(zip(headers, vals, strict=False)))
+    return filas, "xls", advertencias
+
+
+def _load_ods(ruta: Path) -> tuple[list[dict[str, str]], str, list[AdvertenciaTabla]]:
+    """Carga ODS como lista de dicts usando lxml+zipfile. Retorna (filas, formato, advertencias)."""
+    advertencias: list[AdvertenciaTabla] = []
+    try:
+        with zipfile.ZipFile(str(ruta)) as zf:
+            content_xml = zf.read("content.xml")
+    except (KeyError, zipfile.BadZipFile) as exc:
+        raise ArchivoCorrumpidoError(f"ODS inválido o corrupto: {exc}", archivo=str(ruta)) from exc
+
+    root = etree_fromstring(content_xml)
+    tables = root.findall(f".//{{{_NS_TABLE}}}table")
+
+    if not tables:
+        return [], "ods", advertencias
+
+    if len(tables) > 1:
+        sheet_names = [t.get(f"{{{_NS_TABLE}}}name", f"Hoja{i + 1}") for i, t in enumerate(tables)]
+        advertencias.append(
+            f"El archivo contiene {len(tables)} hojas "
+            f"({', '.join(sheet_names)}); "
+            f"se procesó únicamente la primera hoja: '{sheet_names[0]}'."
+        )
+
+    table = tables[0]
+    raw_rows: list[list[str]] = []
+
+    for row_el in table.findall(f"{{{_NS_TABLE}}}table-row"):
+        cells: list[str] = []
+        for cell_el in row_el.findall(f"{{{_NS_TABLE}}}table-cell"):
+            repeat = int(cell_el.get(f"{{{_NS_TABLE}}}number-columns-repeated", "1"))
+            texts = cell_el.findall(f".//{{{_NS_TEXT}}}p")
+            val = "".join(t.text or "" for t in texts).strip()
+            cells.extend([val] * repeat)
+        # Recortar celdas vacías repetidas al final (artefacto del formato)
+        while cells and not cells[-1]:
+            cells.pop()
+        raw_rows.append(cells)
+
+    # Eliminar filas vacías al final
+    while raw_rows and not any(raw_rows[-1]):
+        raw_rows.pop()
+
+    if not raw_rows:
+        return [], "ods", advertencias
+
+    headers = raw_rows[0]
+    filas: list[dict[str, str]] = []
+    for row_vals in raw_rows[1:]:
+        if any(v for v in row_vals):
+            row_dict = {
+                headers[i]: (row_vals[i] if i < len(row_vals) else "") for i in range(len(headers))
+            }
+            filas.append(row_dict)
+    return filas, "ods", advertencias
+
+
+def _load_dataframe(ruta: Path) -> tuple[list[dict[str, str]], str, list[AdvertenciaTabla]]:
+    """Carga filas como lista de dicts {col_name: value_str}.
+
+    Retorna (filas, formato, advertencias).
+    - filas: cada elemento es un dict {header: valor_string}
+    - formato: "csv", "xlsx", "xls" u "ods"
+    - advertencias: lista de strings (multi-hoja, encoding, etc.)
+
+    Filas completamente vacías NO se incluyen (ya filtradas aquí).
     """
     ext = ruta.suffix.lower()
-    advertencias: list[str | dict[str, Any]] = []
 
     if ext == ".csv":
-        sep = _detect_csv_separator(ruta)
-        try:
-            df = pd.read_csv(ruta, sep=sep, encoding="utf-8", dtype=str, keep_default_na=False)
-        except UnicodeDecodeError:
-            df = pd.read_csv(ruta, sep=sep, encoding="latin-1", dtype=str, keep_default_na=False)
-        return df, "csv", advertencias
+        filas, advertencias = _load_csv(ruta)
+        return filas, "csv", advertencias
 
     elif ext == ".xlsx":
-        xf = pd.ExcelFile(ruta)
-        if len(xf.sheet_names) > 1:
-            advertencias.append(
-                f"El archivo contiene {len(xf.sheet_names)} hojas "
-                f"({', '.join(str(s) for s in xf.sheet_names)}); "
-                f"se procesó únicamente la primera hoja: '{xf.sheet_names[0]}'."
-            )
-        df = cast(pd.DataFrame, xf.parse(xf.sheet_names[0], dtype=str, keep_default_na=False))
-        return df, "xlsx", advertencias
+        return _load_xlsx(ruta)
 
     elif ext == ".xls":
-        xf = pd.ExcelFile(ruta, engine="xlrd")
-        if len(xf.sheet_names) > 1:
-            advertencias.append(
-                f"El archivo contiene {len(xf.sheet_names)} hojas "
-                f"({', '.join(str(s) for s in xf.sheet_names)}); "
-                f"se procesó únicamente la primera hoja: '{xf.sheet_names[0]}'."
-            )
-        df = cast(pd.DataFrame, xf.parse(xf.sheet_names[0], dtype=str, keep_default_na=False))
-        return df, "xls", advertencias
+        return _load_xls(ruta)
 
     elif ext == ".ods":
-        xf = pd.ExcelFile(ruta, engine="odf")
-        if len(xf.sheet_names) > 1:
-            advertencias.append(
-                f"El archivo contiene {len(xf.sheet_names)} hojas "
-                f"({', '.join(str(s) for s in xf.sheet_names)}); "
-                f"se procesó únicamente la primera hoja: '{xf.sheet_names[0]}'."
-            )
-        df = cast(pd.DataFrame, xf.parse(xf.sheet_names[0], dtype=str, keep_default_na=False))
-        return df, "ods", advertencias
+        return _load_ods(ruta)
 
     else:
         raise FormatoNoSoportadoError(
@@ -203,21 +336,18 @@ def parsear_tabla(ruta: Path) -> TablaResult:
             archivo=str(ruta),
         )
 
-    df, formato, advertencias_carga = _load_dataframe(ruta)
-
-    # Eliminar filas completamente vacías
-    df = df.replace("", None)
-    df = df.dropna(how="all")
+    filas, formato, advertencias_carga = _load_dataframe(ruta)
 
     # Detectar archivo sin datos
-    if len(df) == 0:
+    if not filas:
         raise ArchivoSinDatosError(
             f"El archivo no contiene filas de datos: {ruta}",
             archivo=str(ruta),
         )
 
-    # Mapear columnas
-    col_map, unmapped = _map_columns(df)
+    # Mapear columnas usando los nombres del primer dict
+    col_names = list(filas[0].keys())
+    col_map, unmapped = _map_columns(col_names)
     columnas_detectadas = list(col_map.values())
 
     # Verificar columnas requeridas
@@ -234,13 +364,11 @@ def parsear_tabla(ruta: Path) -> TablaResult:
     tasa_presente = "tasa" in columnas_detectadas
     total_iva: Decimal | None = Decimal("0") if tasa_presente else None
 
-    for idx, row in df.iterrows():
-        fila = int(idx) + 2  # encabezado es fila 1, primer dato es fila 2
-
+    for fila_idx, row_dict in enumerate(filas, start=2):  # fila 1 es el header
         # Columnas canónicas
         canonical_vals: dict[str, Any] = {}
         for orig_col, canon in col_map.items():
-            val = row.get(orig_col)
+            val: Any = row_dict.get(orig_col, "") or None  # "" → None
             if _is_blank(val):
                 val = None
             canonical_vals[canon] = val
@@ -248,16 +376,18 @@ def parsear_tabla(ruta: Path) -> TablaResult:
         # Extras
         columnas_extra: dict[str, Any] = {}
         for col in unmapped:
-            val = row.get(col)
+            val = row_dict.get(col, "") or None
             if _is_blank(val):
                 val = None
             columnas_extra[col] = val
 
         # Convertir decimales — valor no numérico es error fatal
         archivo_str = str(ruta)
-        cantidad = _to_decimal_or_error(canonical_vals, "cantidad", fila, archivo_str)
-        valor_unitario = _to_decimal_or_error(canonical_vals, "valor_unitario", fila, archivo_str)
-        importe = _to_decimal_or_error(canonical_vals, "importe", fila, archivo_str)
+        cantidad = _to_decimal_or_error(canonical_vals, "cantidad", fila_idx, archivo_str)
+        valor_unitario = _to_decimal_or_error(
+            canonical_vals, "valor_unitario", fila_idx, archivo_str
+        )
+        importe = _to_decimal_or_error(canonical_vals, "importe", fila_idx, archivo_str)
 
         # Feature 3: IVA estimado por fila
         tasa_raw = canonical_vals.get("tasa") if tasa_presente else None
@@ -265,25 +395,28 @@ def parsear_tabla(ruta: Path) -> TablaResult:
         if tasa_presente and tasa_raw is not None:
             tasa_decimal = _to_decimal(tasa_raw)
             if tasa_decimal is None:
-                advertencias_carga.append(AdvertenciaTasaNoNumerica(
-                    fila=fila,
-                    valor_encontrado=str(tasa_raw),
-                ))
+                advertencias_carga.append(
+                    AdvertenciaTasaNoNumerica(
+                        fila=fila_idx,
+                        valor_encontrado=str(tasa_raw),
+                    )
+                )
             elif importe is not None:
                 iva_estimado = importe * tasa_decimal
 
         registro = TablaRow(
-            fila=fila,
+            fila=fila_idx,
             clave_prod_serv=canonical_vals.get("clave_prod_serv"),
             descripcion=canonical_vals.get("descripcion"),
             cantidad=cantidad,
             valor_unitario=valor_unitario,
             importe=importe,
-            impuesto=canonical_vals.get("impuesto"),
             tasa=tasa_raw if tasa_presente else None,
             iva_estimado=iva_estimado,
             columnas_extra=columnas_extra,
         )
+        if tasa_presente:
+            registro._tasa_col_presente = True
         registros.append(registro)
 
         if iva_estimado is not None and total_iva is not None:
@@ -299,12 +432,14 @@ def parsear_tabla(ruta: Path) -> TablaResult:
             esperado = registro.cantidad * registro.valor_unitario
             diferencia = abs(registro.importe - esperado)
             if diferencia > Decimal("0.01"):
-                advertencias_carga.append(AdvertenciaImporteInconsistente(
-                    fila=registro.fila,
-                    importe_declarado=str(registro.importe),
-                    importe_calculado=f"{esperado:.2f}",
-                    diferencia=f"{diferencia:.2f}",
-                ))
+                advertencias_carga.append(
+                    AdvertenciaImporteInconsistente(
+                        fila=registro.fila,
+                        importe_declarado=str(registro.importe),
+                        importe_calculado=f"{esperado:.2f}",
+                        diferencia=f"{diferencia:.2f}",
+                    )
+                )
 
     return TablaResult(
         archivo=str(ruta.resolve()),

@@ -43,25 +43,61 @@ def _make_xls(path: Path, rows: list[list], sheet2_rows: list[list] | None = Non
 
 
 def _make_ods(path: Path, rows: list[list], sheet2_rows: list[list] | None = None) -> None:
-    """Crea un archivo .ods usando pandas con engine='odf'.
+    """Crea un archivo .ods mínimo usando lxml+zipfile.
 
-    La primera fila de `rows` se usa como encabezado del DataFrame.
+    La primera fila de `rows` se usa como encabezado.
+    Si sheet2_rows está presente, se agrega una segunda hoja llamada 'Hoja2'.
     """
-    import pandas as pd
+    import io
+    import zipfile
 
-    def rows_to_df(data: list[list]) -> pd.DataFrame:
-        header = [str(v) for v in data[0]]
-        body = [[str(v) for v in row] for row in data[1:]]
-        return pd.DataFrame(body, columns=header)
+    from lxml.etree import tostring
+    from lxml.etree import Element, SubElement
 
-    df1 = rows_to_df(rows)
+    NS_OFFICE = "urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+    NS_TABLE = "urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+    NS_TEXT = "urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+    NSMAP = {
+        "office": NS_OFFICE,
+        "table": NS_TABLE,
+        "text": NS_TEXT,
+    }
+
+    def _build_table(parent: object, name: str, data: list[list]) -> None:
+        """Agrega una tabla ODS al nodo parent."""
+        from lxml.etree import _Element  # type: ignore[attr-defined]
+        tbl = SubElement(parent, f"{{{NS_TABLE}}}table")  # type: ignore[arg-type]
+        tbl.set(f"{{{NS_TABLE}}}name", name)
+        for row_data in data:
+            row_el = SubElement(tbl, f"{{{NS_TABLE}}}table-row")
+            for cell_val in row_data:
+                cell_el = SubElement(row_el, f"{{{NS_TABLE}}}table-cell")
+                p_el = SubElement(cell_el, f"{{{NS_TEXT}}}p")
+                p_el.text = str(cell_val)
+
+    root = Element(f"{{{NS_OFFICE}}}document-content", nsmap=NSMAP)
+    body = SubElement(root, f"{{{NS_OFFICE}}}body")
+    spreadsheet = SubElement(body, f"{{{NS_OFFICE}}}spreadsheet")
+
+    _build_table(spreadsheet, "Conceptos", rows)
     if sheet2_rows is not None:
-        df2 = rows_to_df(sheet2_rows)
-        with pd.ExcelWriter(str(path), engine="odf") as writer:
-            df1.to_excel(writer, sheet_name="Conceptos", index=False)
-            df2.to_excel(writer, sheet_name="Hoja2", index=False)
-    else:
-        df1.to_excel(str(path), index=False, engine="odf", sheet_name="Conceptos")
+        _build_table(spreadsheet, "Hoja2", sheet2_rows)
+
+    content_xml = tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
+
+    mimetype = b"application/vnd.oasis.opendocument.spreadsheet"
+    manifest_xml = (
+        b'<?xml version="1.0" encoding="UTF-8"?>'
+        b'<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0">'
+        b'<manifest:file-entry manifest:full-path="/" manifest:media-type="application/vnd.oasis.opendocument.spreadsheet"/>'
+        b'<manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>'
+        b"</manifest:manifest>"
+    )
+
+    with zipfile.ZipFile(str(path), "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("mimetype", mimetype)
+        zf.writestr("content.xml", content_xml)
+        zf.writestr("META-INF/manifest.xml", manifest_xml)
 
 
 # ---------------------------------------------------------------------------
