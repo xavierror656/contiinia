@@ -52,24 +52,43 @@ _COLUMNAS_REQUERIDAS = frozenset(
 _ALIAS_MAP: dict[str, str] = {}
 
 _ALIASES: dict[str, list[str]] = {
-    "clave_prod_serv": ["clave_prod_serv", "clave", "claveprodsrv", "clave_producto", "clave_sat"],
-    "descripcion": ["descripcion", "descripción", "desc", "concepto", "descripcion_concepto"],
-    "cantidad": ["cantidad", "qty", "cant", "unidades"],
+    "clave_prod_serv": [
+        "clave_prod_serv", "clave_sat", "clave_producto",
+        "clave", "claveprodsrv",
+        "código", "codigo",                    # CONTPAQi Comercial
+        "clave_concepto",                      # CONTPAQi interno
+        "claveprodserv",                       # CFDI XML camelCase sin espacio
+    ],
+    "descripcion": [
+        "descripcion", "descripción", "desc", "concepto", "descripcion_concepto",
+        "nombre", "nombre_producto", "producto",  # CONTPAQi Comercial
+    ],
+    "cantidad": [
+        "cantidad", "qty", "cant", "unidades",
+        "piezas",                              # CONTPAQi variante
+    ],
     "valor_unitario": [
         "valor_unitario",
-        "precio",
-        "precio_unitario",
+        "precio", "precio_unitario",
         "valor",
-        "total_concepto",  # se incluye por robustez
+        "total_concepto",
+        "valorunitario",                       # CONTPAQi Factura Electrónica camelCase
+        "precio_unit",                         # CONTPAQi Comercial abreviado
+        "precio unit",                         # CONTPAQi Comercial con espacio
     ],
     "importe": ["importe", "total", "monto", "subtotal", "total_concepto"],
-    "tasa": ["tasa", "tasa_iva", "porcentaje"],
+    "tasa": [
+        "tasa", "tasa_iva", "porcentaje",
+        "iva",                                 # CONTPAQi columna IVA → mapeada a tasa
+        "% iva", "%iva",                       # CONTPAQi con símbolo de porcentaje
+        "tasaocuota",                          # CFDI XML camelCase
+    ],
 }
 
-# Construir diccionario inverso alias → canónico (en minúsculas)
+# Construir diccionario inverso alias → canónico (en minúsculas + strip)
 for _canon, _alias_list in _ALIASES.items():
     for _alias in _alias_list:
-        _ALIAS_MAP[_alias.lower()] = _canon
+        _ALIAS_MAP[_alias.strip().lower()] = _canon
 
 
 def _is_blank(value: Any) -> bool:
